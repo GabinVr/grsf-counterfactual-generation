@@ -48,17 +48,14 @@ def counterfactual_batch(dataset:str, params:dict, nb_samples:int=10, nn_classif
     return: a list of triplets (counterfactual, target, base)
     """
     # First we need to train the GRSF classifier
-    grsf_classifier, data = gen
-    .grsf(dataset, params, debug=False)
+    grsf_classifier, data = gen.grsf(dataset, params, debug=False)
     X_train, y_train, X_test, y_test = data
 
     # Then we need to create a surrogate classifier
     if not nn_classifier:
-        nn_classifier = gen
-        .SimpleSurogateClassifier(input_size=X_train.shape[1], hidden_size=100, output_size=len(np.unique(y_train)))
+        nn_classifier = gen.SimpleSurogateClassifier(input_size=X_train.shape[1], hidden_size=100, output_size=len(np.unique(y_train)))
     
-    surrogate = gen
-    .SurrogateContext(nn_classifier)
+    surrogate = gen.SurrogateContext(nn_classifier)
 
     y_train = torch.tensor(y_train, dtype=torch.long)
     y_test = torch.tensor(y_test, dtype=torch.long)
@@ -72,8 +69,7 @@ def counterfactual_batch(dataset:str, params:dict, nb_samples:int=10, nn_classif
     surrogate.evaluate(X_test, y_test, debug=True)
 
     # Create a counterfactual crafting object
-    counterfactual = gen
-    .CounterFactualCrafting(grsf_classifier, surrogate)
+    counterfactual = gen.CounterFactualCrafting(grsf_classifier, surrogate)
 
     # Get a batch of base and target pairs
     base_target_pairs = get_base_target_pair(X_test, y_test, nb_samples)
@@ -150,8 +146,7 @@ def test_get_base_target_pair():
     
     print(f"test_get_base_target_pair: passed with {fails} fails")
 
-class LSTMClassifier(gen
-.BaseSurrogateClassifier):
+class LSTMClassifier(gen.BaseSurrogateClassifier):
     def __init__(self, input_size, hidden_size, num_layers, output_size, dropout:float=0.2):
         super().__init__()
         self.num_layers = num_layers
@@ -175,8 +170,7 @@ class LSTMClassifier(gen
         x = self.fc(h_n)
         return x
 
-class CNNClassifier(gen
-.BaseSurrogateClassifier):
+class CNNClassifier(gen.BaseSurrogateClassifier):
     def __init__(self, input_size, hidden_size, output_size):
         super().__init__()
         self.hidden_size = hidden_size
@@ -277,11 +271,9 @@ if __name__ == "__main__":
         "alphas": [0.1, 0.5, 0.9]
     }
     dataset = wb_datasets.load_dataset(dataset_name)
-    grsf_classifier, _ = gen
-    .grsf(dataset_name, params, debug=False)
+    grsf_classifier, _ = gen.grsf(dataset_name, params, debug=False)
     print(f"Simple classifier:")
-    classifier = gen
-    .SimpleSurogateClassifier(input_size=dataset[0].shape[1], hidden_size=100, output_size=len(np.unique(dataset[1])))
+    classifier = gen.SimpleSurogateClassifier(input_size=dataset[0].shape[1], hidden_size=100, output_size=len(np.unique(dataset[1])))
     print(f"Dataset: {dataset_name} with classes: {np.unique(dataset[1])}")
     counterfactuals = counterfactual_batch(dataset_name, params, 10, classifier, debug=False)
     distance_based_analysis(grsf_classifier, counterfactuals)
@@ -300,13 +292,10 @@ if __name__ == "__main__":
 
 
     print(f"Local counterfactual crafting:")
-    grsf_classifier, data = gen
-    .grsf(dataset_name, params, debug=False)
+    grsf_classifier, data = gen.grsf(dataset_name, params, debug=False)
     X_train, y_train, X_test, y_test = data
-    classifier = gen
-    .SimpleSurogateClassifier(input_size=X_train.shape[1], hidden_size=100, output_size=len(np.unique(y_train)))
-    crafter = gen
-    .CounterFactualCrafting(grsf_classifier, classifier, beta=0.1)
+    classifier = gen.SimpleSurogateClassifier(input_size=X_train.shape[1], hidden_size=100, output_size=len(np.unique(y_train)))
+    crafter = gen.CounterFactualCrafting(grsf_classifier, classifier, beta=0.1)
 
     target = X_test[0]
     base = X_test[1]

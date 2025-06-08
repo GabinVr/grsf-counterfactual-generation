@@ -35,7 +35,7 @@ def getDatasetNames():
                                                                         "PigArtPressure",
                                                                         "PigCVP",
                                                                         "Fungi",
-                                                                                                                                                                                                                        "FiftyWords"]]
+                                                                        "FiftyWords"]]
 def getDataset(dataset_name:str):
     return pd.DataFrame(wildboar.datasets.load_dataset(dataset_name)[0])
 
@@ -104,7 +104,7 @@ def grsf(dataset:str, params:dict, debug:bool=True):
         X, y = preprocess_dataset(X, y)
     except ValueError as e:
         print(f"Error loading dataset {dataset}: {e}")
-        return
+        return (1, "Error-code: Dataset not found or invalid format")
     
     try:
         classifier = RandomShapeletClassifier(
@@ -116,7 +116,7 @@ def grsf(dataset:str, params:dict, debug:bool=True):
         )
     except ValueError as e:
         print(f"Error creating classifier: {e}")
-        return
+        return (1, "Error-code: Invalid parameters for RandomShapeletClassifier")
     
     # Let's split the dataset into training and testing sets
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -125,13 +125,13 @@ def grsf(dataset:str, params:dict, debug:bool=True):
         classifier.fit(X_train, y_train)
     except ValueError as e:
         print(f"Error fitting classifier: {e}")
-        return
+        return (1, "Error-code: Failed to fit the classifier")
     # Predict the labels for the test set
     try:
         y_pred = classifier.predict(X_test)
     except ValueError as e:
         print(f"Error predicting labels: {e}")
-        return
+        return (1, "Error-code: Failed to predict labels")
     # Print the accuracy
     try:
         accuracy = classifier.score(X_test, y_test)
@@ -139,13 +139,13 @@ def grsf(dataset:str, params:dict, debug:bool=True):
             print(f"Accuracy: {accuracy:.2f}")
     except ValueError as e:
         print(f"Error calculating accuracy: {e}")
-        return
+        return (1, "Error-code: Failed to calculate accuracy")
     # Calculate the confusion matrix
     try:
         cm = confusion_matrix(y_test, y_pred)
     except ValueError as e:
         print(f"Error calculating confusion matrix: {e}")
-        return
+        return (1, "Error-code: Failed to calculate confusion matrix")
 
     if not debug:
         return classifier, (X_train, y_train, X_test, y_test)
@@ -171,6 +171,30 @@ def grsf(dataset:str, params:dict, debug:bool=True):
         return
 
     return classifier, (X_train, y_train, X_test, y_test)
+
+def evaluate_grsf(classifier:RandomShapeletClassifier, X_test, y_test, debug:bool=True):
+    """
+    Evaluate the GRSF classifier on the test set.
+    
+    Parameters:
+    - classifier: RandomShapeletClassifier, the trained classifier
+    - X_test: np.ndarray, test set features
+    - y_test: np.ndarray, test set labels
+    - debug: bool, whether to print debug information
+    
+    Returns:
+    - accuracy: float, accuracy of the classifier on the test set
+    """
+    assert isinstance(classifier, RandomShapeletClassifier), "classifier must be a RandomShapeletClassifier"
+    
+    try:
+        accuracy = classifier.score(X_test, y_test)
+        if debug:
+            print(f"Accuracy: {accuracy:.2f}")
+        return accuracy
+    except ValueError as e:
+        print(f"Error evaluating classifier: {e}")
+        return None
 
 def plot_shapelets(clf, dataset:str):
     """
@@ -277,6 +301,13 @@ class BaseSurrogateClassifier(Module):
         if debug:
             print(f"Accuracy: {accuracy:.2f}")
         return accuracy
+    
+    def get_params(self):
+        """
+        Return model parameters.
+        This method should be implemented in the subclass to return the parameters of the model.
+        """
+        raise NotImplementedError("get_params must be implemented in the subclass")
    
 class SurrogateContext:
     """
@@ -334,6 +365,14 @@ class SurrogateContext:
         """
         self._check_classifier()
         return self._classifier.forward(x)
+
+    def get_params(self):
+        """
+        Return model parameters.
+        This method should be implemented in the subclass to return the parameters of the model.
+        """
+        self._check_classifier()
+        return self._classifier.get_params()
 
     def _check_classifier(self):
         """
