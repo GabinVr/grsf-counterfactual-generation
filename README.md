@@ -30,3 +30,26 @@ Illustration:
 ![Counterfactuals Generation](./static/algorithm.png)
 
 
+## Repository structure
+- `ui/`: Contains the Streamlit application to visualize and interact with the counterfactual generation process.
+- `models.py`: Contains several classifier architectures to be used as surrogate models.
+- `gen.py`: Contains the implementation of the counterfactual generation algorithm.
+- `counterfactual.py`: Contains some implementation of `gen.py` to generate counterfactuals in batch and get some statistics on them.
+
+
+## Try it out
+There is two ways to try out the project:
+1. **Locally**: 
+   - Clone the repository.
+   - Create a virtual environment `python -m venv .venv`.
+    - Activate the virtual environment:
+      - On Windows: `.venv\Scripts\activate`
+      - On macOS/Linux: `source .venv/bin/activate`
+    - Install the requirements: `pip install -r requirements.txt`.
+    - Run the Streamlit app from the root of the project: `streamlit run ui/main.py`
+2. **Docker**:
+(Not working yet, but will be soon)
+   - Build the Docker image: `docker build -t grsf-counterfactual-generation .`
+   - Run the Docker container: `docker run -p 8501:8501 grsf-counterfactual-generation`
+   - Open your browser and go to `http://localhost:8501`.
+
