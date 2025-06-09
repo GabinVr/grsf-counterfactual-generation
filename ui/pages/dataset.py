@@ -5,7 +5,6 @@ This page allows users to select, load and analyze
 different time series datasets available via wildboar.
 """
 import streamlit as st
-from components.visualization import VisualizationComponent
 from components.dataset import DatasetComponent
 import pandas as pd
 import numpy as np
