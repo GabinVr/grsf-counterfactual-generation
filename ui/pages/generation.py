@@ -1,8 +1,12 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+import streamlit as st
+import numpy as np
 from typing import Optional
 from utils import getDatasetNames, getDataset
 from components.model_config import grsfConfig, dnnConfig, dnnUtils
+from components.couterfactuals_config import CounterfactualsConfig, CounterfactualsAnalysisComponent
 from code_editor import code_editor
 
 ## Page with 4 tabs: 
@@ -49,6 +53,14 @@ class GenerationPage:
                     st.session_state['uploaded_data'] = dataset
                     st.session_state['dataset_name'] = selected_dataset
                     st.success(f"Dataset '{selected_dataset}' loaded successfully!")
+                    # Store important information about the dataset in session state
+                    st.session_state['sample_size'] = dataset[0].shape[1] # Length of the time series
+                    st.session_state['num_classes'] = len(np.unique(dataset[1])) # Number of classes
+                    st.divider()
+                    st.markdown("Important information about the dataset:")
+                    st.write(f"Sample size: {st.session_state['sample_size']}")
+                    st.write(f"Number of classes: {st.session_state['num_classes']}")
+
         with tab2:
             # Only show this tab if data is uploaded
             if 'uploaded_data' not in st.session_state:
@@ -114,233 +126,80 @@ class GenerationPage:
                 # Todo - Add method in every model to give parameters needed
                 dnn_model = dnnUtils.get_available_models()[st.session_state['selected_model']]
                 dnn_model_conf = dnnConfig(dnn_model)
+                dnn_model_conf.set_params(
+                    sample_size=st.session_state['sample_size'],
+                    num_classes=st.session_state['num_classes']
+                )
                 dnn_model_conf.render()
                 st.divider()
-        with tab4:
-            st.markdown("### 📊 Results Display and Analysis")
-            st.markdown("Here you can visualize the generated counterfactuals and analyze their quality.")
-            
-    def _show_progress_status(self):
-        """Affiche le statut de progression."""
-        steps = [
-            ("📁 Données", 'uploaded_data' in st.session_state),
-            ("⚙️ Configuration", 'model_config' in st.session_state),
-            ("🎯 Génération", 'generation_results' in st.session_state),
-            ("📊 Analyse", False)  # Pour la page d'analyse
-        ]
-        
-        cols = st.columns(len(steps))
-        
-        for i, (step_name, completed) in enumerate(steps):
-            with cols[i]:
-                if completed:
-                    st.success(f"✅ {step_name}")
-                else:
-                    st.info(f"⏳ {step_name}")
-    
-    def _is_ready_for_generation(self) -> bool:
-        """Vérifie si tous les prérequis sont remplis pour la génération."""
-        return ('uploaded_data' in st.session_state and 
-                'model_config' in st.session_state)
-    
-    def _render_generation_interface(self):
-        """Affiche l'interface de génération."""
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Paramètres de génération
-            st.markdown("#### Paramètres de génération")
-            
-            num_counteractuals = st.number_input(
-                "Nombre de contrefactuels à générer",
-                min_value=1,
-                max_value=1000,
-                value=10,
-                help="Nombre d'exemples contrefactuels à créer"
-            )
-            
-            target_class = st.selectbox(
-                "Classe cible",
-                ["Auto-détection", "Classe 0", "Classe 1"],
-                help="Classe vers laquelle orienter les contrefactuels"
-            )
-            
-            distance_threshold = st.slider(
-                "Seuil de distance maximale",
-                min_value=0.1,
-                max_value=2.0,
-                value=1.0,
-                step=0.1,
-                help="Distance maximale autorisée par rapport à l'original"
-            )
-        
-        with col2:
-            # Options avancées
-            st.markdown("#### Options avancées")
-            
-            preserve_features = st.multiselect(
-                "Caractéristiques à préserver",
-                st.session_state['uploaded_data'].columns.tolist(),
-                help="Caractéristiques qui ne doivent pas être modifiées"
-            )
-            
-            optimization_method = st.selectbox(
-                "Méthode d'optimisation",
-                ["Gradient Descent", "Genetic Algorithm", "Simulated Annealing"],
-                help="Algorithme d'optimisation pour la génération"
-            )
-            
-            random_seed = st.number_input(
-                "Graine aléatoire",
-                min_value=0,
-                max_value=9999,
-                value=42,
-                help="Pour la reproductibilité des résultats"
-            )
-        
-        # Bouton de génération
-        st.markdown("---")
-        
-        if st.button("🚀 Lancer la génération", type="primary", use_container_width=True):
-            self._run_generation({
-                'num_counteractuals': num_counteractuals,
-                'target_class': target_class,
-                'distance_threshold': distance_threshold,
-                'preserve_features': preserve_features,
-                'optimization_method': optimization_method,
-                'random_seed': random_seed
-            })
-    
-    def _run_generation(self, generation_params: dict):
-        """
-        Lance la génération de contrefactuels.
-        
-        Args:
-            generation_params: Paramètres de génération
-        """
-        with st.spinner("Génération en cours..."):
-            # Ici, vous intégreriez votre logique de génération GRSF
-            # Pour le moment, nous simulons avec des données factices
-            
-            progress_bar = st.progress(0)
-            
-            # Simulation de progression
-            import time
-            for i in range(100):
-                time.sleep(0.01)  # Simulation du temps de traitement
-                progress_bar.progress(i + 1)
-            
-            # Simulation de résultats
-            original_data = st.session_state['uploaded_data']
-            
-            # Création de données contrefactuelles simulées
-            # (à remplacer par votre logique réelle)
-            counterfactual_data = self._simulate_counterfactuals(
-                original_data, 
-                generation_params['num_counteractuals']
-            )
-            
-            # Sauvegarde des résultats
-            st.session_state['generation_results'] = {
-                'original_data': original_data,
-                'counterfactual_data': counterfactual_data,
-                'generation_params': generation_params,
-                'metrics': self._calculate_metrics(original_data, counterfactual_data)
-            }
-            
-            progress_bar.empty()
-            st.success(f"✅ {generation_params['num_counteractuals']} contrefactuels générés avec succès!")
-            st.rerun()
-    
-    def _simulate_counterfactuals(self, original_data: pd.DataFrame, num_samples: int) -> pd.DataFrame:
-        """
-        Simule la génération de contrefactuels (à remplacer par la vraie logique).
-        
-        Args:
-            original_data: Données originales
-            num_samples: Nombre d'échantillons à générer
-            
-        Returns:
-            pd.DataFrame: Données contrefactuelles simulées
-        """
-        import numpy as np
-        
-        # Sélection d'échantillons aléatoires
-        sample_indices = np.random.choice(len(original_data), size=min(num_samples, len(original_data)), replace=False)
-        counterfactual_data = original_data.iloc[sample_indices].copy()
-        
-        # Ajout de bruit gaussien pour simuler des modifications
-        numeric_columns = counterfactual_data.select_dtypes(include=[np.number]).columns
-        for col in numeric_columns:
-            noise = np.random.normal(0, counterfactual_data[col].std() * 0.1, len(counterfactual_data))
-            counterfactual_data[col] += noise
-        
-        return counterfactual_data
-    
-    def _calculate_metrics(self, original: pd.DataFrame, counterfactual: pd.DataFrame) -> dict:
-        """
-        Calcule les métriques de qualité des contrefactuels.
-        
-        Args:
-            original: Données originales
-            counterfactual: Données contrefactuelles
-            
-        Returns:
-            dict: Métriques calculées
-        """
-        import numpy as np
-        
-        # Métriques simulées (à remplacer par de vraies métriques)
-        return {
-            'average_distance': np.random.uniform(0.5, 1.5),
-            'validity_rate': np.random.uniform(0.8, 1.0),
-            'diversity_score': np.random.uniform(0.6, 0.9),
-            'sparsity': np.random.uniform(0.3, 0.7)
-        }
-    
-    def _render_results(self):
-        """Affiche les résultats de génération."""
-        results = st.session_state['generation_results']
-        
-        # Métriques de qualité
-        col1, col2, col3, col4 = st.columns(4)
-        
-        metrics = results['metrics']
-        with col1:
-            st.metric("Distance moyenne", f"{metrics['average_distance']:.2f}")
-        with col2:
-            st.metric("Taux de validité", f"{metrics['validity_rate']:.1%}")
-        with col3:
-            st.metric("Score de diversité", f"{metrics['diversity_score']:.2f}")
-        with col4:
-            st.metric("Parcimonie", f"{metrics['sparsity']:.2f}")
-        
-        # Aperçu des données générées
-        st.markdown("#### Aperçu des contrefactuels générés")
-        st.dataframe(results['counterfactual_data'].head(10))
-        
-        # Boutons d'action
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            if st.button("📊 Analyser les résultats"):
-                st.switch_page("pages/analysis.py")
-        
-        with col2:
-            csv = results['counterfactual_data'].to_csv(index=False)
-            st.download_button(
-                "💾 Télécharger CSV",
-                csv,
-                "contrefactuels.csv",
-                "text/csv"
-            )
-        
-        with col3:
-            if st.button("🔄 Nouvelle génération"):
-                if 'generation_results' in st.session_state:
-                    del st.session_state['generation_results']
-                st.rerun()
+                st.markdown("### Training parameters")
+                # epochs 
+                epochs = st.number_input(
+                    "Number of epochs",
+                    min_value=1,
+                    max_value=1000,
+                    value=100,
+                    help="Number of epochs for training the surrogate model"
+                )
+                st.session_state['epochs'] = epochs
+                # learning rate
+                learning_rate = st.number_input(
+                    "Learning rate",
+                    min_value=0.0001,
+                    max_value=0.1,
+                    value=0.001,
+                    step=0.0001,
+                    help="Learning rate for training the surrogate model"
+                )
+                
+                # Add a button to launch the training of the model
+                if st.button("🚀 Train Surrogate Model", type="primary", use_container_width=True):
+                    with st.spinner("Training surrogate model..."):
+                        try:
+                            st.info(f"split dataset: {len(st.session_state['split_dataset'])} ")
 
+                            st.session_state['trained_surrogate_model'] = dnn_model_conf.train_model(st.session_state['split_dataset'], epochs=epochs, learning_rate=learning_rate)
+                            st.success("Surrogate model trained successfully!")
+                            st.divider()
+                            accuracy = dnn_model_conf.evaluate_model(st.session_state['trained_surrogate_model'], st.session_state['split_dataset'])
+                            st.markdown(f"#### 🚀 Surrogate Model Accuracy: {accuracy * 100:.2f}%")
+                        except Exception as e:
+                            st.error(f"Failed to train surrogate model: {str(e)}")
+                            st.session_state['trained_surrogate_model'] = None
+                if 'trained_surrogate_model' in st.session_state and st.session_state['trained_surrogate_model'] is not None:
+                    # Initialize counterfactuals config if not exists
+                    if 'counterfactuals_config' not in st.session_state:
+                        counterfactuals_config = CounterfactualsConfig(
+                            grsf_model=st.session_state['trained_grsf_model'],
+                            surrogate_model=st.session_state['trained_surrogate_model'],
+                            split_dataset=st.session_state['split_dataset']
+                        )
+                        st.session_state['counterfactuals_config'] = counterfactuals_config
+                    else:
+                        counterfactuals_config = st.session_state['counterfactuals_config']
+                    
+                    # Render counterfactuals generation UI
+                    st.divider()
+                    st.markdown("### 🎯 Generate Counterfactuals")
+                    counterfactuals_config.render()
+
+        with tab4:
+            # Get data from session state
+            counterfactuals = st.session_state.get('counterfactuals_list', None)
+            grsf_model = st.session_state.get('trained_grsf_model', None)
+            
+            # Create analysis component and pass data directly
+            analysis_component = CounterfactualsAnalysisComponent(
+                counterfactuals_config=st.session_state.get('counterfactuals_config', None)
+            )
+            
+            # Pass the data directly to render method
+            analysis_component.render(
+                counterfactuals=counterfactuals,
+                grsf_classifier=grsf_model
+            )
+
+            
 def main():
     """Point d'entrée principal de l'application."""
     st.set_page_config(

@@ -10,8 +10,6 @@ import torch
 import torch.nn as nn
 from pyts.approximation import PiecewiseAggregateApproximation as PAA
 
-
-
 class LSTMClassifier(gen.BaseSurrogateClassifier):
     def __init__(self, input_size, hidden_size, num_layers, output_size, dropout:float=0.2):
         super().__init__()
@@ -37,15 +35,21 @@ class LSTMClassifier(gen.BaseSurrogateClassifier):
         return x
     
     @staticmethod
-    def get_params():
+    def get_params(sample_size: int = None, num_classes: int = None):
         """Return model parameters."""
-        return {
-            "input_size": "Size of the input features",
-            "hidden_size": "Size of the hidden layer",
-            "num_layers": "Number of LSTM layers",
-            "output_size": "Number of output classes",
-            "dropout": "Dropout rate (default: 0.2)"
+        params = {
+            "input_size": {"type": "int", "default": 1, "description": "Should be the length of the input sequence"},
+            "hidden_size": {"type": "int", "default": 100, "description": "Size of the hidden layer"},
+            "num_layers": {"type": "int", "default": 1, "description": "Number of LSTM layers"},
+            "output_size": {"type": "int", "default": 2, "description": "Number of output classes"},
+            "dropout": {"type": "float", "default": 0.2, "description": "Dropout rate for LSTM layers"},
         }
+
+        if sample_size is not None:
+            params["input_size"]["default"] = sample_size
+        if num_classes is not None:
+            params["output_size"]["default"] = num_classes
+        return params
 
 class CNNClassifier(gen.BaseSurrogateClassifier):
     def __init__(self, input_size, hidden_size, output_size):
@@ -73,13 +77,18 @@ class CNNClassifier(gen.BaseSurrogateClassifier):
         return x
     
     @staticmethod
-    def get_params():
+    def get_params(sample_size: int = None, num_classes: int = None):
         """Return model parameters."""
-        return {
-            "input_size": "Should be the length of the input sequence",
-            "hidden_size": "Size of the hidden layer",
-            "output_size": "Number of output classes",
+        params = {
+            "input_size": {"type": "int", "default": 1, "description": "Should be the length of the input sequence"},
+            "hidden_size": {"type": "int", "default": 50, "description": "Size of the hidden layer"},
+            "output_size": {"type": "int", "default": 2, "description": "Number of output classes"},
         }
+        if sample_size is not None:
+            params["input_size"]["default"] = sample_size
+        if num_classes is not None:
+            params["output_size"]["default"] = num_classes
+        return params
 
 def listModels():
     """

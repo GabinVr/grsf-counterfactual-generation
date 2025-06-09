@@ -273,6 +273,22 @@ class BaseSurrogateClassifier(Module):
         """
         # self.parameters() is a generator that yields the parameters of the model
         optimizer = optimizer(self.parameters(), lr=lr)
+        # if the dataset is not a torch.Tensor, we convert it to a torch.Tensor
+        if not isinstance(X_train, torch.Tensor):
+            X_train = torch.tensor(X_train, dtype=torch.float32)
+        if not isinstance(y_train, torch.Tensor):
+            y_train = torch.tensor(y_train, dtype=torch.long)
+        # Check if the input data is 2D, if not, reshape it
+        if len(X_train.shape) == 1:
+            X_train = X_train.unsqueeze(0)
+        elif len(X_train.shape) == 2:
+            X_train = X_train.unsqueeze(1)
+        # Check if the labels are 1D, if not, reshape them
+        if len(y_train.shape) > 1:
+            y_train = y_train.squeeze()
+        # Check if the labels are of type long (int64)
+        if y_train.dtype != torch.long:
+            y_train = y_train.long()
         
         for epoch in range(epochs):
             optimizer.zero_grad()
@@ -294,6 +310,18 @@ class BaseSurrogateClassifier(Module):
         y_test is a torch.Tensor of shape (n_samples,)
         debug is a boolean to print the evaluation progress
         """
+        if not isinstance(X_test, torch.Tensor):
+            X_test = torch.tensor(X_test, dtype=torch.float32)
+        if not isinstance(y_test, torch.Tensor):
+            y_test = torch.tensor(y_test, dtype=torch.long)
+        # Check if the input data is 2D, if not, reshape it
+        if len(X_test.shape) == 1:
+            X_test = X_test.unsqueeze(0)
+        elif len(X_test.shape) == 2:
+            X_test = X_test.unsqueeze(1)
+        # Check if the labels are 1D, if not, reshape them
+        if len(y_test.shape) > 1:
+            y_test = y_test.squeeze()
         with torch.no_grad():
             outputs = self.forward(X_test)
             _, predicted = torch.max(outputs, 1)

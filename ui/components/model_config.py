@@ -10,21 +10,12 @@ from core.AppConfig import AppConfig
 import logging
 from logging import getLogger
 
-# Add the project root to the Python path to import gen.py
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-# Now we can import gen.py from the project root
 import gen
 import models
-
-# fOR GRSF
-        # - n_shapelets: int, number of shapelets to be used
-        # - metric: str, distance metric to be used
-        # - min_shapelet_size: int, minimum size of the shapelets
-        # - max_shapelet_size: int, maximum size of the shapelets
-        # - alphas: list, list of alpha values to be used
     
 distance_metrics = ["euclidean",
                     "normalized_euclidean",
@@ -61,42 +52,152 @@ class dnnUtils:
             list: List of model names
         """
         return models.listModels()
-
+    
+class useDNN:
+    """
+    Class to use DNN models for counterfactual generation.
+    """
+    
+    def __init__(self, model:gen.BaseSurrogateClassifier):
+        """
+        Setup the DNN model
+        """
+        self.model = model
+    
+    def getSetupModel(self, **kwargs) -> gen.BaseSurrogateClassifier:
+        """
+        Setup the DNN model with the given parameters.
+        
+        Args:
+            **kwargs: Model parameters
+        
+        Returns:
+            gen.BaseSurrogateClassifier: Configured DNN model
+        """
+        try:
+            model_instance = self.model(**kwargs)
+            st.info(f"Model {self.model.__name__} configured successfully with parameters: {kwargs}")
+            return model_instance
+        except Exception as e:
+            st.error(f"Error configuring model {self.model.__name__}: {str(e)}")
+            logging.error(f"Error configuring model {self.model.__name__}: {str(e)}")
+            return None
+    
 class dnnConfig:
     def __init__(self, model:gen.BaseSurrogateClassifier):
-        self.params = model.get_params()
+        self.params = None
+        self.model = model
+    
+    def set_params(self, sample_size: int = None, num_classes: int = None):
+        """
+        Set the parameters for the DNN model.
+        
+        Args:
+            sample_size: Length of the input sequence
+            num_classes: Number of output classes
+        """
+        self.params = self.model.get_params(sample_size=sample_size, num_classes=num_classes)
     
     def render(self) -> Dict[str, Any]:
         """
         Render the DNN configuration interface.
-        
-        Returns:
-            Dict[str, Any]: Configuration of the DNN model
         """
 
-        for param, value in self.params.items():
-            st.markdown(f"**{param}**: (default) {value}")
-            user_params = st.text_input(
-                label=f"Set {param}",
-                value=str(value),
-                key=param,
-                help=f"Set the value for {param} (default: {value})"
-            )
+        for param, desc in self.params.items():
         
-        st.divider()
-        st.markdown("### 🎞️ Counterfactual parameters")
+            if desc["type"] == "int":
+                value = st.number_input(
+                    label=f"Set {param}",
+                    min_value=desc.get("min", 0),
+                    max_value=desc.get("max", 10000),
+                    value=int(desc["default"]),
+                    step=1,
+                    help=desc.get("description", "")
+                )
+            elif desc["type"] == "float":
+                value = st.number_input(
+                    label=f"Set {param}",
+                    min_value=desc.get("min", 0.0),
+                    max_value=desc.get("max", 1.0),
+                    value=float(desc["default"]),
+                    step=0.01,
+                    format="%.2f",
+                    help=desc.get("description", "")
+                )
+            elif desc["type"] == "str":
+                value = st.text_input(
+                    label=f"Set {param}",
+                    value=desc["default"],
+                    help=desc.get("description", "")
+                )
+            elif desc["type"] == "bool":
+                value = st.checkbox(
+                    label=f"Set {param}",
+                    value=desc["default"],
+                    help=desc.get("description", "")
+                )
+            else:
+                st.error(f"Unsupported parameter type for {param}: {desc['type']}")
+                continue
+            # Save the value from the user input
+            st.session_state[param] = value
+
+        # Setup the model with the parameters
+        try:
+            setup = useDNN(self.model)
+            self.model = setup.getSetupModel(**{param: st.session_state[param] for param in self.params.keys()})
+        except Exception as e:
+            st.error(f"Error setting up model with parameters: {str(e)}")
+            logging.error(f"Error setting up model with parameters: {str(e)}")
+            return {}
+    
+    def train_model(self, split_dataset: tuple, epochs: int = 100, learning_rate: float = 0.001) -> gen.BaseSurrogateClassifier:
+        """
+        Train the DNN model with the given dataset.
         
-
-
-
+        Args:
+            split_dataset: Tuple containing (X_train, y_train, X_test, y_test)
+            epochs: Number of training epochs
+            learning_rate: Learning rate for the optimizer
+        
+        Returns:
+            gen.BaseSurrogateClassifier: Trained DNN model
+        """
+        try:
+            X_train, y_train, _, _ = split_dataset
+            return self.model.train(X_train, y_train, epochs=epochs, lr=learning_rate)
+        except Exception as e:
+            st.error(f"Error training DNN model: {str(e)}")
+            logging.error(f"Error training DNN model: {str(e)}")
+            return None
+    
+    def evaluate_model(self, model: gen.BaseSurrogateClassifier, dataset: tuple) -> float:
+        """
+        Evaluate the DNN model on the given dataset.
+        
+        Args:
+            model: Trained DNN model
+            dataset: Dataset (X_train, y_train, X_test, y_test)
+        
+        Returns:
+            float: Accuracy of the model on the test set
+        """
+        try:
+            _, _, X_test, y_test = dataset
+            return self.model.evaluate(X_test, y_test, debug=False)
+        except Exception as e:
+            st.error(f"Error evaluating DNN model: {str(e)}")
+            logging.error(f"Error evaluating DNN model: {str(e)}")
+            return None
+        
 class grsfConfig:
     """Configuration for GRSF model."""
     def __init__(self):
         """Initialize configuration for GRSF."""
-        self.n_shapelets = 10
+        self.n_shapelets = 500
         self.metric = "euclidean"
-        self.min_shapelet_size = 3
-        self.max_shapelet_size = 10
+        self.min_shapelet_size = 0.0
+        self.max_shapelet_size = 1.0
         self.alphas = [0.1, 0.5, 1.0]
     
     def to_dict(self) -> Dict[str, Any]:
@@ -202,18 +303,18 @@ class grsfConfig:
         
         self.min_shapelet_size = st.number_input(
             "Minimum shapelet size",
-            min_value=0,
-            max_value=50,
+            min_value=0.0,
+            max_value=50.0,
             value=self.min_shapelet_size,
-            step=1
+            step=0.1
         )
         
         self.max_shapelet_size = st.number_input(
             "Maximum shapelet size",
             min_value=self.min_shapelet_size,
-            max_value=90,
+            max_value=90.0,
             value=self.max_shapelet_size,
-            step=1
+            step=0.1
         )
         
         # alpha values : triplet like (0.1, 1.0, 10.0)

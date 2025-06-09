@@ -84,7 +84,42 @@ def counterfactual_batch(dataset:str, params:dict, nb_samples:int=10, nn_classif
         counterfactuals.append((counterfactual_sample, target, base))
     
     return counterfactuals
-        
+
+def counterfactual_batch_generation(grsf_classifier, nn_classifier, split_dataset, nb_samples:int=10, debug:bool=True):
+    """
+    Generate a batch of nb_samples counterfactuals for a given dataset
+    grsf_classifier: the GRSF model to use
+    nn_classifier: a pre-trained surrogate classifier
+    split_dataset: the dataset (X_train, y_train, X_test, y_test) to use for counterfactual generation
+    nb_samples: the number of counterfactuals to generate
+    return: a list of triplets (counterfactual, target, base)
+    """
+
+    X_train, y_train, X_test, y_test = split_dataset
+
+    surrogate = gen.SurrogateContext(nn_classifier)
+
+    y_train = torch.tensor(y_train, dtype=torch.long)
+    y_test = torch.tensor(y_test, dtype=torch.long)
+    X_train = torch.tensor(X_train, dtype=torch.float32)
+    X_test = torch.tensor(X_test, dtype=torch.float32)
+
+    counterfactual = gen.CounterFactualCrafting(grsf_classifier, surrogate)
+
+    # Get a batch of base and target pairs
+    base_target_pairs = get_base_target_pair(X_test, y_test, nb_samples)
+    if base_target_pairs is None:
+        print("Not enough samples for counterfactual crafting")
+        return None
+    counterfactuals = []
+    for base, target in base_target_pairs:
+        (base_sample, base_label) = base
+        (target_sample, _) = target
+        counterfactual_sample = counterfactual.generate_counterfactual(target_sample, base_sample, base_label, debug=debug)
+        counterfactuals.append((counterfactual_sample, target, base))
+    
+    return counterfactuals
+
 def evaluate_counterfactuals(counterfactuals:list):
     """
     Evaluate the quality of the counterfactuals
