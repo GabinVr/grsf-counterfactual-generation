@@ -53,3 +53,14 @@ There is two ways to try out the project:
    - Run the Docker container: `docker run -p 8501:8501 grsf-counterfactual-generation`
    - Open your browser and go to `http://localhost:8501`.
 
+## What's next?
+### Short-term goals
+- [ ] Add local counterfactual generation
+- [ ] Add support for different loss functions (custom ?)
+- [ ] Finish custom surrogate model implementation in the streamlit app (safely)
+### Long-term goals
+- [ ] Fix Docker implementation
+- [ ] Add more surrogate model architectures
+- [ ] Implement additional counterfactual generation methods
+- [ ] Add support for multivariate time series
+- [ ] Create comprehensive documentation

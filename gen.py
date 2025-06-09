@@ -479,7 +479,7 @@ class CounterFactualCrafting:
     
     def generate_counterfactual(self, target, base, base_label, lr:float=0.01, epochs:int=100, debug:bool=True, local_index:int=None):
         """
-        Generate counterfactuals
+        Generate counterfactuals 
         """
         local = local_index is not None
         
