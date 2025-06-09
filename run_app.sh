@@ -5,19 +5,6 @@
 
 echo "🔬 Lancement de l'application GRSF Counterfactual Generation..."
 
-# Vérification de l'environnement virtuel
-if [[ "$VIRTUAL_ENV" == "" ]]; then
-    echo "⚠️  Aucun environnement virtuel détecté."
-    echo "💡 Recommandation : Activez votre environnement virtuel avec :"
-    echo "   source .venv/bin/activate"
-    echo ""
-    read -p "Continuer quand même ? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
-    fi
-fi
-
 # Lancement de l'application
 echo "🚀 Démarrage de l'application Streamlit..."
 echo "🌐 L'application sera disponible sur : http://localhost:8501"

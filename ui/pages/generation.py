@@ -115,8 +115,12 @@ class GenerationPage:
                 with st.expander("## 🛠 write your own ?"):
                     # Display the template for custom model (code in the file `template_custom_model.txt`)
                     st.markdown("You can fill in the code below to implement your own model architecture.")
-                    with open("ui/templates/template_custom_model.txt", "r") as file:
-                        template_code = file.read()
+                    try:
+                        with open("ui/templates/template_custom_model.txt", "r") as file:
+                            template_code = file.read()
+                    except FileNotFoundError:
+                        st.info("Template file not found. Please ensure the file exists in the correct path.")
+                        template_code = ""
                     response_button = [{"name": "Finish"}]
                     response_dict = code_editor(template_code, buttons=response_button)
                     st.info(f"Custom model code updated: {response_dict}")

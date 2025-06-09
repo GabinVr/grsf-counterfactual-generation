@@ -1,0 +1,12 @@
+services:
+  grsf-counterfactual-generation:
+    build: .
+    image: grsf-counterfactual-generation:latest
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+    restart: unless-stopped
+    

@@ -1,19 +1,24 @@
-FROM python:3.14.0b2-bookworm
+FROM python:3.13-bullseye
+# FROM gcr.io/distroless/python3
 # Author: Gabin Vrillault
 # mail: gabin[dot]vrillault[at]ecole[dot]ensicaen[dot]fr
 # Date: 2025-06-21
 
 # Description: Dockerfile for the counterfactuals module.
 
-# This module was written with the help of Claude 3.5 Sonnet 
-
 WORKDIR /app
 
-COPY * /app/
+COPY . /app/
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
 
 RUN chmod +x run_app.sh
+
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
 # Expose the port that Streamlit uses
 EXPOSE 8501
 

@@ -48,9 +48,7 @@ There is two ways to try out the project:
     - Install the requirements: `pip install -r requirements.txt`.
     - Run the Streamlit app from the root of the project: `streamlit run ui/main.py`
 2. **Docker**:
-(Not working yet, but will be soon)
-   - Build the Docker image: `docker build -t grsf-counterfactual-generation .`
-   - Run the Docker container: `docker run -p 8501:8501 grsf-counterfactual-generation`
+   - Run `docker compose up --build` from the root of the project.
    - Open your browser and go to `http://localhost:8501`.
 
 ## What's next?
@@ -59,7 +57,6 @@ There is two ways to try out the project:
 - [ ] Add support for different loss functions (custom ?)
 - [ ] Finish custom surrogate model implementation in the streamlit app (safely)
 ### Long-term goals
-- [ ] Fix Docker implementation
 - [ ] Add more surrogate model architectures
 - [ ] Implement additional counterfactual generation methods
 - [ ] Add support for multivariate time series
