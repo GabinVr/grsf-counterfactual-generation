@@ -117,7 +117,7 @@ class CounterfactualsAnalysisComponent:
         tab1, tab2, tab3, tab4 = st.tabs(["🔍 Visual Analysis", "📏 Distance Analysis", "📈 Statistics", "🎯 Validity Check"])
         
         with tab1:
-            self._render_grid_view(counterfactuals)
+            self._render_visual_analysis(counterfactuals)
         
         with tab2:
             self._render_distance_analysis(counterfactuals, grsf_classifier)
@@ -131,69 +131,76 @@ class CounterfactualsAnalysisComponent:
     def _render_visual_analysis(self, counterfactuals):
         """Render interactive time series visualizations of counterfactuals."""
         st.markdown("### 📈 Time Series Comparison")
-        # Grid view for multiple counterfactuals
-        if st.button("Show all counterfactuals in grid view", value=True):
-            self._render_grid_view(counterfactuals)
-        else:
-            # Select which counterfactual to visualize
-            num_counterfactuals = len(counterfactuals)
-            selected_idx = st.selectbox(
-                "Select counterfactual to analyze:",
-                range(num_counterfactuals),
-                format_func=lambda x: f"Counterfactual {x + 1}"
+
+        # Check if counterfactuals is valid
+        if counterfactuals is None or len(counterfactuals) == 0:
+            st.warning("⚠️ No counterfactuals available for visual analysis.")
+            return
+
+        # Select which counterfactual to visualize
+        num_counterfactuals = len(counterfactuals)
+
+        selected_idx = st.selectbox(
+            "Select counterfactual to analyze:",
+            range(num_counterfactuals),
+            format_func=lambda x: f"Counterfactual {x + 1}"
+        )
+        
+        if selected_idx is not None:
+            counterfactual, target, base = counterfactuals[selected_idx]
+            
+            # Convert tensors to numpy
+            cf_np = counterfactual.detach().numpy() if torch.is_tensor(counterfactual) else counterfactual
+            target_np = target[0].detach().numpy() if torch.is_tensor(target[0]) else target[0]
+            base_np = base[0].detach().numpy() if torch.is_tensor(base[0]) else base[0]
+            
+            # Create interactive plot
+            fig = go.Figure()
+            
+            time_steps = np.arange(len(cf_np))
+            
+            fig.add_trace(go.Scatter(
+                x=time_steps,
+                y=base_np,
+                mode='lines',
+                name=f'Base (Class {base[1]})',
+                line=dict(color='blue', dash='dash', width=2),
+                opacity=0.7
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=time_steps,
+                y=target_np,
+                mode='lines',
+                name=f'Target (Class {target[1]})',
+                line=dict(color='red', width=2),
+                opacity=0.7
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=time_steps,
+                y=cf_np,
+                mode='lines',
+                name='Counterfactual',
+                line=dict(color='green', dash='dashdot', width=3),
+                opacity=0.9
+            ))
+            
+            fig.update_layout(
+                title=f'Counterfactual {selected_idx + 1} Analysis',
+                xaxis_title='Time Steps',
+                yaxis_title='Value',
+                hovermode='x unified',
+                template='plotly_white',
+                showlegend=True
             )
             
-            if selected_idx is not None:
-                counterfactual, target, base = counterfactuals[selected_idx]
-                
-                # Convert tensors to numpy
-                cf_np = counterfactual.detach().numpy() if torch.is_tensor(counterfactual) else counterfactual
-                target_np = target[0].detach().numpy() if torch.is_tensor(target[0]) else target[0]
-                base_np = base[0].detach().numpy() if torch.is_tensor(base[0]) else base[0]
-                
-                # Create interactive plot
-                fig = go.Figure()
-                
-                time_steps = np.arange(len(cf_np))
-                
-                fig.add_trace(go.Scatter(
-                    x=time_steps,
-                    y=base_np,
-                    mode='lines',
-                    name=f'Base (Class {base[1]})',
-                    line=dict(color='blue', dash='dash', width=2),
-                    opacity=0.7
-                ))
-                
-                fig.add_trace(go.Scatter(
-                    x=time_steps,
-                    y=target_np,
-                    mode='lines',
-                    name=f'Target (Class {target[1]})',
-                    line=dict(color='red', width=2),
-                    opacity=0.7
-                ))
-                
-                fig.add_trace(go.Scatter(
-                    x=time_steps,
-                    y=cf_np,
-                    mode='lines',
-                    name='Counterfactual',
-                    line=dict(color='green', dash='dashdot', width=3),
-                    opacity=0.9
-                ))
-                
-                fig.update_layout(
-                    title=f'Counterfactual {selected_idx + 1} Analysis',
-                    xaxis_title='Time Steps',
-                    yaxis_title='Value',
-                    hovermode='x unified',
-                    template='plotly_white',
-                    showlegend=True
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-                
+            st.plotly_chart(fig, use_container_width=True)
+        
+                # Grid view for multiple counterfactuals
+        if st.checkbox("Show Grid View of All Counterfactuals", value=True):
+            self._render_grid_view(counterfactuals)
+        
 
 
     def _render_grid_view(self, counterfactuals):
