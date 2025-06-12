@@ -3,6 +3,10 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import numpy as np
+import torch
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
 from typing import Optional
 from utils import getDatasetNames, getDataset
 from components.model_config import grsfConfig, dnnConfig, dnnUtils
@@ -185,7 +189,14 @@ class GenerationPage:
                     # Render counterfactuals generation UI
                     st.divider()
                     st.markdown("### 🎯 Generate Counterfactuals")
-                    counterfactuals_config.render()
+                    # counterfactuals_config.render()
+                    global_cf, local_cf = st.tabs(["🌍 Global", "📍 Local"])
+                    with global_cf:
+                        counterfactuals_config._render_global_counterfactuals()
+                    with local_cf:
+                        st.markdown("#### 📍 Local Counterfactuals Generation")
+                        counterfactuals_config._render_local_counterfactuals()
+
 
         with tab4:
             # Get data from session state
@@ -203,7 +214,6 @@ class GenerationPage:
                 grsf_classifier=grsf_model
             )
 
-            
 def main():
     """Point d'entrée principal de l'application."""
     st.set_page_config(

@@ -38,6 +38,19 @@ def get_base_target_pair(X_test, y_test, nb_samples:int):
             
     return base_target_pairs
 
+def get_target_from_base_class(base_class, y_test, X_test):
+    """
+    Get a target sample from a different class than the base sample
+    base: the base class 
+    y_test: the labels of the test set
+    X_test: the test set
+    """
+    classes = np.unique(y_test)
+    target_class = np.random.choice(classes[classes != base_class])
+    target_sample = X_test[y_test == target_class][np.random.randint(len(X_test[y_test == target_class]))]
+    return target_sample, target_class
+
+
 def counterfactual_batch(dataset:str, params:dict, nb_samples:int=10, nn_classifier=None, debug:bool=True):
     """
     Generate a batch of nb_samples counterfactuals for a given dataset
@@ -120,6 +133,32 @@ def counterfactual_batch_generation(grsf_classifier, nn_classifier, split_datase
     
     return counterfactuals
 
+def counterfactual_local_generation(grsf_classifier, classifier, target, base, base_label, binary_mask, epochs=500, lr=0.036, beta=0.80):
+    """
+    Generate a local counterfactual for a given target and base instance
+    grsf_classifier: the trained GRSF model to use
+    classifier: a pre-trained surrogate classifier
+    target: the target instance to generate a counterfactual for
+    base: the base instance to use as a starting point for the counterfactual
+    base_label: the label of the base instance
+    binary_mask: a binary mask indicating which features can be modified
+    return: the generated counterfactual instance
+    """
+    # Create a counterfactual crafting object
+    crafter = gen.CounterFactualCrafting(grsf_classifier, classifier)
+
+    # Generate the local counterfactual
+    local_counterfactual_sample = crafter.generate_local_counterfactuals(
+        target, base, base_label, binary_mask, 
+        epochs=epochs,
+        lr=lr,
+        beta=beta,
+        debug=True
+    )
+    
+    local_counterfactual_sample = local_counterfactual_sample.detach().numpy()
+    return local_counterfactual_sample
+
 def evaluate_counterfactuals(counterfactuals:list):
     """
     Evaluate the quality of the counterfactuals
@@ -145,6 +184,7 @@ def evaluate_counterfactuals(counterfactuals:list):
     
 
     return base_distances, target_distances
+
 
 
 #### Tests
@@ -295,7 +335,7 @@ if __name__ == "__main__":
     # Fungi
     # FiftyWords
 
-    print(f"Counterfactual crafting:")
+    # print(f"Counterfactual crafting:")
 
     dataset_name = "ECG200"
     params = {
@@ -306,30 +346,33 @@ if __name__ == "__main__":
         "alphas": [0.1, 0.5, 0.9]
     }
     dataset = wb_datasets.load_dataset(dataset_name)
-    grsf_classifier, _ = gen.grsf(dataset_name, params, debug=False)
-    print(f"Simple classifier:")
-    classifier = gen.SimpleSurogateClassifier(input_size=dataset[0].shape[1], hidden_size=100, output_size=len(np.unique(dataset[1])))
-    print(f"Dataset: {dataset_name} with classes: {np.unique(dataset[1])}")
-    counterfactuals = counterfactual_batch(dataset_name, params, 10, classifier, debug=False)
-    distance_based_analysis(grsf_classifier, counterfactuals)
+    # grsf_classifier, _ = gen.grsf(dataset_name, params, debug=False)
+    # print(f"Simple classifier:")
+    # classifier = gen.SimpleSurogateClassifier(input_size=dataset[0].shape[1], hidden_size=100, output_size=len(np.unique(dataset[1])))
+    # print(f"Dataset: {dataset_name} with classes: {np.unique(dataset[1])}")
+    # counterfactuals = counterfactual_batch(dataset_name, params, 10, classifier, debug=False)
+    # distance_based_analysis(grsf_classifier, counterfactuals)
 
-    print(f"LSTM classifier:")
-    classifier = LSTMClassifier(input_size=dataset[0].shape[1], hidden_size=100, num_layers=2, output_size=len(np.unique(dataset[1])))
-    counterfactuals = counterfactual_batch(dataset_name, params, 10, classifier, debug=False)
-    distance_based_analysis(grsf_classifier, counterfactuals)
-    print(f"CNN classifier:")
-    classifier = CNNClassifier(input_size=dataset[0].shape[1], hidden_size=100, output_size=len(np.unique(dataset[1])))
-    counterfactuals = counterfactual_batch(dataset_name, params, 10, classifier, debug=False)
-    distance_based_analysis(grsf_classifier, counterfactuals)
+    # print(f"LSTM classifier:")
+    # classifier = LSTMClassifier(input_size=dataset[0].shape[1], hidden_size=100, num_layers=2, output_size=len(np.unique(dataset[1])))
+    # counterfactuals = counterfactual_batch(dataset_name, params, 10, classifier, debug=False)
+    # distance_based_analysis(grsf_classifier, counterfactuals)
+    # print(f"CNN classifier:")
+    # classifier = CNNClassifier(input_size=dataset[0].shape[1], hidden_size=100, output_size=len(np.unique(dataset[1])))
+    # counterfactuals = counterfactual_batch(dataset_name, params, 10, classifier, debug=False)
+    # distance_based_analysis(grsf_classifier, counterfactuals)
 
-    input("Press Enter to continue with local counterfactuals crafting...")
+    # input("Press Enter to continue with local counterfactuals crafting...")
     # Let's test local counterfactuals crafting
 
 
     print(f"Local counterfactual crafting:")
-    grsf_classifier, data = gen.grsf(dataset_name, params, debug=False)
+    grsf_classifier, data = gen.grsf(dataset_name, params, debug=True)
     X_train, y_train, X_test, y_test = data
-    classifier = gen.SimpleSurogateClassifier(input_size=X_train.shape[1], hidden_size=100, output_size=len(np.unique(y_train)))
+    # classifier = gen.SimpleSurogateClassifier(input_size=X_train.shape[1], hidden_size=100, output_size=len(np.unique(y_train)))
+    classifier = CNNClassifier(input_size=X_train.shape[1], hidden_size=100, output_size=len(np.unique(y_train)))
+    classifier.train(X_train, y_train, epochs=500, lr=0.001, debug=True)
+    classifier.evaluate(X_test, y_test, debug=True)
     crafter = gen.CounterFactualCrafting(grsf_classifier, classifier, beta=0.1)
 
     target = X_test[0]
@@ -340,54 +383,87 @@ if __name__ == "__main__":
     base = torch.tensor(base, dtype=torch.float32)
     base_label = torch.tensor(base_label, dtype=torch.long)
 
-    counterfactual_samples = crafter.generate_local_counterfactuals(target, base, base_label, nb_samples=5, debug=True)
-    print(f"Counterfactual samples: {len(counterfactual_samples)}")
+    binary_mask = np.zeros(len(base))
+    # Let's set the first 50% of the base to 1
+    binary_mask[:len(base)//2] = 1
+    binary_mask = torch.tensor(binary_mask, dtype=torch.float32)
+    local_counterfactual_sample = crafter.generate_local_counterfactuals(target, base, base_label, 
+                                                                         binary_mask, 
+                                                                         epochs=500, 
+                                                                         lr=0.036, 
+                                                                         beta=0.80, 
+                                                                         debug=True)
 
-    # Plotting the counterfactuals compared to the base and target
+    base = base.detach().numpy()
+    local_counterfactual_sample = local_counterfactual_sample.detach().numpy()
+    target = target.detach().numpy()
+    print(f"Local counterfactual sparcity: {np.sum(local_counterfactual_sample != base) / local_counterfactual_sample.size * 100:.2f}%")
+    print(f"Local counterfactual validity: {grsf_classifier.predict(local_counterfactual_sample.reshape(1, -1)) == grsf_classifier.predict(target.reshape(1, -1))}")
+    print(f"Local counterfactual distance to target: {np.linalg.norm(local_counterfactual_sample - target)}")
+    print(f"Local counterfactual distance to base: {np.linalg.norm(local_counterfactual_sample - base)}")
 
     import matplotlib.pyplot as plt
     import os
-    size = len(counterfactual_samples)
-    # Matrix of plots with superposed counterfactuals, base and target
-    # The goal is to have a grid of plots to visualize the counterfactuals
-    # compared to the base and target
 
-    # Create subplot grid
-    cols = 3
-    rows = (size + cols - 1) // cols  # Ceiling division
-    fig, axes = plt.subplots(rows, cols, figsize=(15, 5 * rows))
-    
-    # Flatten axes array for easier indexing
-    if rows == 1:
-        axes = axes.reshape(1, -1)
-    axes = axes.flatten()
-    
-    # Convert tensors to numpy for plotting
-    target_np = target.detach().numpy()
-    base_np = base.detach().numpy()
-    
-    for i, counterfactual in enumerate(counterfactual_samples):
-        if i >= len(axes):
-            break
-            
-        counterfactual_np = counterfactual.detach().numpy()
-        
-        axes[i].plot(base_np, label='Base', color='blue', alpha=0.7, linestyle='dashed')
-        axes[i].plot(target_np, label='Target', color='red', alpha=0.7)
-        axes[i].plot(counterfactual_np, label='Counterfactual', color='green', alpha=0.8, linestyle='dashdot')
-        axes[i].set_title(f'Counterfactual {i+1}')
-        axes[i].legend()
-        axes[i].grid(True, alpha=0.3)
-    
-    # Hide unused subplots
-    for i in range(size, len(axes)):
-        axes[i].set_visible(False)
-    
-    plt.tight_layout()
+    plt.figure(figsize=(10, 5))
+    plt.plot(target, label='Target', color='red', alpha=0.7)
+    plt.plot(base, label='Base', color='blue', alpha=0.7, linestyle='dashed')
+    plt.plot(local_counterfactual_sample, label='Local Counterfactual', color='green', alpha=0.8, linestyle='dashdot')
+    plt.title('Local Counterfactual Crafting')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
     i = 0
     while os.path.exists(f"local_counterfactual_{i}.png"):
         i += 1
-    # Let's save the plot
     plt.savefig(f"local_counterfactual_{i}.png")
-    plt.show()
+    # plt.show()
+
+
+    # # Plotting the counterfactuals compared to the base and target
+
+    # import matplotlib.pyplot as plt
+    # import os
+    # size = len(counterfactual_samples)
+    # # Matrix of plots with superposed counterfactuals, base and target
+    # # The goal is to have a grid of plots to visualize the counterfactuals
+    # # compared to the base and target
+
+    # # Create subplot grid
+    # cols = 3
+    # rows = (size + cols - 1) // cols  # Ceiling division
+    # fig, axes = plt.subplots(rows, cols, figsize=(15, 5 * rows))
+    
+    # # Flatten axes array for easier indexing
+    # if rows == 1:
+    #     axes = axes.reshape(1, -1)
+    # axes = axes.flatten()
+    
+    # # Convert tensors to numpy for plotting
+    # target_np = target.detach().numpy()
+    # base_np = base.detach().numpy()
+    
+    # for i, counterfactual in enumerate(counterfactual_samples):
+    #     if i >= len(axes):
+    #         break
+            
+    #     counterfactual_np = counterfactual.detach().numpy()
+        
+    #     axes[i].plot(base_np, label='Base', color='blue', alpha=0.7, linestyle='dashed')
+    #     axes[i].plot(target_np, label='Target', color='red', alpha=0.7)
+    #     axes[i].plot(counterfactual_np, label='Counterfactual', color='green', alpha=0.8, linestyle='dashdot')
+    #     axes[i].set_title(f'Counterfactual {i+1}')
+    #     axes[i].legend()
+    #     axes[i].grid(True, alpha=0.3)
+    
+    # # Hide unused subplots
+    # for i in range(size, len(axes)):
+    #     axes[i].set_visible(False)
+    
+    # plt.tight_layout()
+    # i = 0
+    # while os.path.exists(f"local_counterfactual_{i}.png"):
+    #     i += 1
+    # # Let's save the plot
+    # plt.savefig(f"local_counterfactual_{i}.png")
+    # plt.show()
         

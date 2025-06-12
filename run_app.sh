@@ -1,15 +1,12 @@
 #!/bin/bash
 
-# Script de lancement pour l'application GRSF Counterfactual Generation
+# Launch script for the GRSF Counterfactual Generation application
 # Usage: ./run_app.sh
 
-echo "🔬 Lancement de l'application GRSF Counterfactual Generation..."
-
-# Lancement de l'application
-echo "🚀 Démarrage de l'application Streamlit..."
-echo "🌐 L'application sera disponible sur : http://localhost:8501"
-echo "🛑 Appuyez sur Ctrl+C pour arrêter l'application"
+echo "🔬 Launching GRSF Counterfactual Generation application..."
+echo "🚀 Starting Streamlit App ..."
+echo "🌐 Available @ : http://localhost:8501"
+echo "🛑 press Ctrl+C to escape"
 echo ""
 
-# Changement vers le dossier ui et lancement
-cd ui && streamlit run main.py
+streamlit run ui/main.py

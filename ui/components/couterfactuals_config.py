@@ -21,7 +21,7 @@ if project_root not in sys.path:
 
 import gen
 import models
-from counterfactual import counterfactual_batch_generation
+from counterfactual import counterfactual_batch_generation, counterfactual_local_generation, get_target_from_base_class
 
 class CounterfactualsConfig:
     def __init__(self, grsf_model, surrogate_model, split_dataset):
@@ -46,12 +46,19 @@ class CounterfactualsConfig:
         """
         Render the configuration UI for counterfactual generation.
         """
+        tab1, tab2 = st.tabs(["🌍 Global", "📍 Local"])
+        with tab1:
+            self._render_global_counterfactuals()
+        with tab2:
+            self._render_local_counterfactuals()
+    
+    def _render_global_counterfactuals(self):
         st.markdown("## 🔍 Counterfactuals generation parameters")
         nb_samples = st.number_input("Number of counterfactuals to generate", 
-                                     min_value=1, 
-                                     max_value=1000, 
-                                     value=10, 
-                                     step=1)
+                                    min_value=1, 
+                                    max_value=1000, 
+                                    value=10, 
+                                    step=1)
         st.session_state.generation_params = {
             "nb_samples": nb_samples,
         }
@@ -74,7 +81,164 @@ class CounterfactualsConfig:
                 st.session_state.counterfactuals_list = None
                 return None
             
+    def _render_local_counterfactuals(self):
+        """
+        Render the UI for local counterfactuals generation.
+        """
+        st.markdown("## 📍 Local Counterfactuals Generation")
+        st.info("Local counterfactuals generation is sample-specific only. (for now)")
+        st.markdown("### Select a sample to generate counterfactuals for")
+        self._render_sample_selection()
+        if 'selected_sample' in st.session_state and st.session_state.selected_sample is not None:
+            sample = st.session_state.selected_sample['sample']
+            class_label = st.session_state.selected_sample['class_label']
+            binary_mask = st.session_state.selected_sample['binary_mask']
+            
+            if st.button("Generate Local Counterfactuals"):
+                local_counterfactual = self._generate_local_counterfactuals_from_selection(
+                    sample=sample,
+                    class_label=class_label,
+                    binary_mask=binary_mask
+                )
+                if local_counterfactual is not None:
+                    st.session_state.local_counterfactual = local_counterfactual
+                    st.success("Local counterfactual generated successfully!")
+                    st.session_state.counterfactuals_list = [local_counterfactual]  # Update the list with the new counterfactual
+                    return local_counterfactual
+                else:
+                    st.error("❌ Failed to generate local counterfactual. Please check the selection and try again.")
+            else:
+                st.warning("Please select a sample and a region to generate local counterfactuals.")
+
+    
+    def _render_sample_selection(self):
+        """
+        Render the sample selection UI for local counterfactuals generation.
+        """
+        if 'split_dataset' not in st.session_state or st.session_state.split_dataset is None:
+            st.error("❌ No dataset loaded. Please load a dataset first.")
+            return
         
+        _, _, X_test, y_test = st.session_state.split_dataset
+        
+        if len(X_test) == 0:
+            st.warning("⚠️ No test samples available for local counterfactuals generation.")
+            return
+        
+        selected_idx = st.selectbox(
+            "Select a sample from the test set:",
+            range(len(X_test)),
+            format_func=lambda x: f" {x + 1} (Class {y_test[x]})"
+        )
+        
+        st.info(f"""To select a region in the time series, click on the bracket icon in the top right corner of the plot. 
+                Then, click and drag to select a region.""")
+
+        if selected_idx is not None:
+            sample = X_test[selected_idx]
+            binary_mask = self._render_interactive_plot_with_selection(sample, y_test[selected_idx])
+            if binary_mask is not None:
+                st.session_state.selected_sample = {
+                    "sample": sample,
+                    "class_label": y_test[selected_idx],
+                    "binary_mask": binary_mask
+                }
+              
+    def _render_interactive_plot_with_selection(self, sample, class_label):
+        """
+        Render the visualization for a selected sample and 
+        allow the user to interactively select points in a popup.
+        """
+        
+        # Convert to numpy if it's a tensor
+        if torch.is_tensor(sample):
+            sample = sample.detach().numpy()
+        
+        # Convert to df
+        sample = pd.DataFrame({
+            "time": range(len(sample)),
+            "value": sample,
+            "class": class_label
+        })
+
+        fig = px.scatter(sample, x="time", y="value", color="class",
+                 title="Time Series Sample",
+                 labels={"time": "Time", "value": "Value", "class": "Class"},
+                 template="plotly_white")
+        
+        # Add horizontal selection direction
+        fig.update_layout(selectdirection='h')
+
+        event = st.plotly_chart(fig, 
+                                key="time serie", 
+                                on_select="rerun")
+        idx_selected = event['selection']['point_indices']
+        binary_mask = np.zeros(len(sample), dtype=bool)
+        if idx_selected is not None and len(idx_selected) > 0:
+            for idx in idx_selected:
+                if 0 <= idx < len(sample):
+                    binary_mask[idx] = 1
+        else:
+            return
+
+        return binary_mask
+
+
+    def _generate_local_counterfactuals_from_selection(self, sample, class_label, binary_mask):
+        """
+        Generate local counterfactuals from the selected region.
+        
+        :param sample: The original sample
+        :param class_label: The class label of the sample
+        :param binary_mask: Binary mask indicating selected points
+        """
+        if not np.any(binary_mask):
+            st.error("❌ No points selected in the binary mask. Please select a region to generate counterfactuals.")
+            return
+        
+        try:
+            # Convert sample to tensor if needed
+            if not torch.is_tensor(sample):
+                sample_tensor = torch.tensor(sample, dtype=torch.float32)
+            else:
+                sample_tensor = sample
+            
+            # Convert binary mask to tensor
+            mask_tensor = torch.tensor(binary_mask, dtype=torch.float32)
+
+            # Get a random sample from an other class
+            _, _, X_test, y_test = st.session_state.split_dataset
+            target_sample, target_class = get_target_from_base_class(class_label, y_test, X_test)
+
+            if not torch.is_tensor(target_sample):
+                target_sample = torch.tensor(target_sample, dtype=torch.float32)
+            if not torch.is_tensor(target_class):
+                target_class = torch.tensor(target_class, dtype=torch.int64)
+
+            # Generate local counterfactuals
+            local_counterfactual = counterfactual_local_generation(
+                grsf_classifier=self.grsf_model,
+                classifier=self.surrogate_model,
+                target= target_sample,
+                base=sample_tensor,
+                base_label= class_label,
+                binary_mask=mask_tensor
+            )
+            if local_counterfactual is None:
+                st.error("❌ Failed to generate local counterfactual. Please check the selection and try again.")
+                return None
+            
+            sample_np = sample_tensor.detach().numpy() if torch.is_tensor(sample_tensor) else sample_tensor
+            target_sample_np = target_sample.detach().numpy() if torch.is_tensor(target_sample) else target_sample
+            local_counterfactual = (local_counterfactual, 
+                                    (target_sample_np, target_class), 
+                                    (sample_np, class_label))
+
+            return local_counterfactual
+            
+        except Exception as e:
+            st.error(f"❌ Erreur lors de la génération: {str(e)}")
+            
             
 class CounterfactualsAnalysisComponent:
     def __init__(self, counterfactuals_config: CounterfactualsConfig = None):
@@ -352,6 +516,27 @@ class CounterfactualsAnalysisComponent:
         sparsity_base = []
         sparsity_target = []
         valid_counterfactuals = 0
+
+        if len(counterfactuals) <= 1:
+            st.warning("⚠️ Not enough counterfactuals to calculate distances.")
+            return {
+                'base_euclidean_mean': 0,
+                'base_euclidean_std': 0,
+                'base_dtw_mean': 0,
+                'base_dtw_std': 0,
+                'target_euclidean_mean': 0,
+                'target_euclidean_std': 0,
+                'target_dtw_mean': 0,
+                'target_dtw_std': 0,
+                'base_euclidean_all': [],
+                'base_dtw_all': [],
+                'target_euclidean_all': [],
+                'target_dtw_all': [],
+                'sparsity_base': [],
+                'sparsity_target': [],
+                'valid_counterfactuals': valid_counterfactuals,
+                'total_counterfactuals': len(counterfactuals)
+            }
         
         for counterfactual, target, base in counterfactuals:
             # Convert to numpy
@@ -496,6 +681,9 @@ class CounterfactualsAnalysisComponent:
     def _render_statistics(self, counterfactuals, grsf_classifier):
         """Render statistical summary of counterfactuals."""
         st.markdown("### 📈 Statistical Summary")
+        if len(counterfactuals) <= 1:
+            st.warning("⚠️ Not enough counterfactuals to calculate statistics.")
+            return
         
         distances_data = self._calculate_distances(counterfactuals, grsf_classifier)
         

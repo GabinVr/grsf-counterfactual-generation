@@ -53,10 +53,12 @@ There is two ways to try out the project:
 
 ## What's next?
 ### Short-term goals
-- [ ] Add local counterfactual generation
+- [X] Add local counterfactual generation
+- [ ] Fix the bug with the number of counterfactuals generated
 - [ ] Add support for different loss functions (custom ?)
 - [ ] Finish custom surrogate model implementation in the streamlit app (safely)
 ### Long-term goals
+- [ ] Add training logs visualization
 - [ ] Add more surrogate model architectures
 - [ ] Implement additional counterfactual generation methods
 - [ ] Add support for multivariate time series

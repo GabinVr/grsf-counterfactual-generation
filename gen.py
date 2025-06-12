@@ -25,6 +25,7 @@ from wildboar.linear_model import RandomShapeletClassifier
 from pyts.approximation import PiecewiseAggregateApproximation as PAA
 
 ##### UTILS #####
+
 def getDatasetNames():
     """
     Get the names of the datasets available in wildboar.datasets compatible with GRSF.
@@ -457,79 +458,28 @@ class CounterFactualCrafting:
         # loss += self.beta * torch.norm(x - base).pow(2)
         return loss
     
-    def loss_fn_local(self, x, target, base, base_label, gradient_mask):
-        """
-        Loss function for the local counterfactual crafting.
-        x : torch.Tensor that is the counterfactual candidate
-        target : torch.Tensor that is the target sample
-        base : torch.Tensor that is the base sample
-        base_label : label of the base sample
-        gradient_mask : torch.Tensor that masks the gradient
-        """
-        loss = torch.norm(self.surrogate_classifier(x) - self.surrogate_classifier(target)).pow(2)
-        if gradient_mask is not None:
-            mobile_region = x * gradient_mask
-            base_mobile_region = base * gradient_mask
-            loss += self.beta * torch.norm(mobile_region - base_mobile_region).pow(2)
-
-            frozen_region = x * (1 - gradient_mask)
-            base_frozen_region = base * (1 - gradient_mask)
-            loss += 10*self.beta * torch.norm(frozen_region - base_frozen_region).pow(2)
-        return loss
-    
-    def generate_counterfactual(self, target, base, base_label, lr:float=0.01, epochs:int=100, debug:bool=True, local_index:int=None):
+    def generate_counterfactual(self, target, base, base_label, lr:float=0.01, epochs:int=100, debug:bool=True):
         """
         Generate counterfactuals 
         """
-        local = local_index is not None
         
         x = base.clone().detach().requires_grad_(True)
-
-        if local:
-            mask_start = local_index[0]
-            mask_end = local_index[1] 
-            gradient_mask = torch.ones_like(x)
-            gradient_mask[mask_start:mask_end] = 0.0
-            opposite_mask = torch.zeros_like(x)
-            opposite_mask[mask_start:mask_end] = 1.0
-            if debug:
-                print(f"Local counterfactual generation: masking indices {mask_start} to {mask_end}")
 
         for epoch in range(epochs):
             x_backup = x.clone().detach().numpy()
 
             # Forward step
-            if local:
-                loss = self.loss_fn_local(x, target, base, base_label, gradient_mask)
-            else:
-                loss = self.loss_fn(x, target, base, base_label)
+            loss = self.loss_fn(x, target, base, base_label)
             loss.backward()
             
             # Check if grad exists
             if x.grad is None:
                 x.grad = torch.zeros_like(x)
-            if local:
-                if epoch % 20 == 0 and debug:
-                    print(f"Epoch {epoch}:")
-                    print(f"  Grad before mask - range: [{x.grad.min():.6f}, {x.grad.max():.6f}]")
-                    print(f"  Frozen region grad sum: {x.grad[mask_start:mask_end].sum():.6f}")
-                    print(f"  Mobile region grad sum: {(x.grad * gradient_mask).sum():.6f}")
-                
-                # Apply the gradient mask to the gradient
-                x.grad = x.grad * gradient_mask
         
             x_temp = x - lr * x.grad
 
             # Backward step
             x = (x_temp + lr * self.beta * base) / (1 + lr * self.beta)
-            if local:
-                x = x * gradient_mask + base * (1 - gradient_mask)
-                # DIAGNOSTIC: vérifier les changements
-                if epoch % 20 == 0 and debug:
-                    frozen_change = torch.norm(x[mask_start:mask_end] - base[mask_start:mask_end])
-                    mobile_change = torch.norm(x * gradient_mask - base * gradient_mask)
-                    print(f"  Frozen region change: {frozen_change:.6f} (should be 0)")
-                    print(f"  Mobile region change: {mobile_change:.6f}")
             
             x = x.clone().detach().requires_grad_(True)
             x_test = x.clone().detach().numpy()
@@ -551,32 +501,80 @@ class CounterFactualCrafting:
             print("Counterfactual generation complete.")
         return x
     
-    def generate_local_counterfactuals(self, target, base, base_label, lr:float=0.01, epochs:int=100, debug:bool=True, nb_samples:int=10):
+    def generate_local_counterfactuals(self, target, base, base_label, binary_mask, lr:float=0.01, epochs:int=100, debug:bool=True, beta:float=0.5):
         """
         Generate local counterfactuals
-        This method is a placeholder for now.
+        :target: torch.Tensor, the target sample
+        :base: torch.Tensor, the base sample
+        :base_label: int, the label of the base sample
+        :binary_mask: torch.Tensor, a binary mask indicating the regions to be modified (1) or frozen (0)
+        :lr: float, learning rate for the optimization
+        :epochs: int, number of epochs for the optimization
+        :debug: bool, whether to print debug information
+        :beta: float, regularization parameter
         """
         
-        local_counterfactuals = []
-        start = 0
-        step = base.shape[0] // nb_samples
-        for i in range(nb_samples):
-            if debug:
-                print(f"Generating counterfactual for sample {i+1}/{nb_samples}")
+        assert isinstance(binary_mask, torch.Tensor), "binary_mask must be a torch.Tensor"
+        assert 1 in binary_mask.unique(), "binary_mask must contain at least one 1"
+        assert 0 in binary_mask.unique(), "binary_mask must contain at least one 0"
+        assert binary_mask.shape == base.shape, "binary_mask must have the same shape as base"
 
-            # Generate the counterfactual
-            if start + step > base.shape[0]:
-                step = base.shape[0] - start
-            if step <= 0:
-                print(f"Skipping sample {i+1} due to zero step size.")
-                continue
-            local_index = (start, start + step)
-            counterfactual = self.generate_counterfactual(target, base, base_label, lr=lr, epochs=epochs, debug=debug, local_index=local_index)
-            start += step
-            local_counterfactuals.append(counterfactual)
+        # Clone base as starting point
+        x = base.clone().detach().requires_grad_(True)
+        
+        modify_mask = binary_mask.clone()  # Regions to modify
+        freeze_mask = 1 - binary_mask      # Regions to freeze
+        
+        for epoch in range(epochs):
+            x_backup = x.clone().detach().numpy()
+
+            # Forward pass
+            loss = self.loss_fn(x, target, base, base_label)
+            
+            # Add regularization to keep frozen regions unchanged
+            frozen_penalty = torch.norm((x - base) * freeze_mask).pow(2)
+            total_loss = loss + 10.0 * beta * frozen_penalty
+            
+            total_loss.backward()
+            
+            # Check if grad exists
+            if x.grad is None:
+                x.grad = torch.zeros_like(x)
+            
+            # Apply mask to gradient: only modify allowed regions
+            x.grad = x.grad * modify_mask
+            
+            if debug and (epoch % 50 == 0):
+                print(f"Epoch {epoch}:")
+
+            # Update step
+            x_temp = x - lr * x.grad
+            
+            # Apply regularization in parameter space
+            x = (x_temp + lr * beta * base) / (1 + lr * beta)
+            
+            # CRUCIAL: Force frozen regions to stay exactly as base
+            x = x * modify_mask + base * freeze_mask
+            
+            # Prepare for next iteration
+            x = x.clone().detach().requires_grad_(True)
+            x_test = x.clone().detach().numpy()
+
+            # Check if prediction changed
+            pred = self.grsf_classifier.predict(x_test.reshape(1, -1))
+            pred_backup = self.grsf_classifier.predict(x_backup.reshape(1, -1))
+
+            if pred != pred_backup:
+                if debug:
+                    print(f"Counterfactual has changed prediction at epoch {epoch+1}")
+                    print(f"  From class {pred_backup} to class {pred}")
+                self.closest_to_boundary = x_backup
+                break
+        
         if debug:
-            print(f"Generated {len(local_counterfactuals)} local counterfactuals.")
-        return local_counterfactuals
+            print("Counterfactual generation complete.")
+
+        return x
 
 class LocalCounterFactualCrafting:
     """
