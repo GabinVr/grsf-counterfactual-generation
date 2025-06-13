@@ -98,7 +98,8 @@ def counterfactual_batch(dataset:str, params:dict, nb_samples:int=10, nn_classif
     
     return counterfactuals
 
-def counterfactual_batch_generation(grsf_classifier, nn_classifier, split_dataset, nb_samples:int=10, debug:bool=True):
+def counterfactual_batch_generation(grsf_classifier, nn_classifier, split_dataset, nb_samples:int=10, debug:bool=True, 
+                                    lr:float=0.036, epochs:int=500, beta:float=0.80):
     """
     Generate a batch of nb_samples counterfactuals for a given dataset
     grsf_classifier: the GRSF model to use
@@ -128,7 +129,10 @@ def counterfactual_batch_generation(grsf_classifier, nn_classifier, split_datase
     for base, target in base_target_pairs:
         (base_sample, base_label) = base
         (target_sample, _) = target
-        counterfactual_sample = counterfactual.generate_counterfactual(target_sample, base_sample, base_label, debug=debug)
+        counterfactual_sample = counterfactual.generate_counterfactual(target_sample, base_sample, base_label, debug=debug,
+                                                                     epochs=epochs, 
+                                                                     lr=lr, 
+                                                                     beta=beta)
         counterfactuals.append((counterfactual_sample, target, base))
     
     return counterfactuals
@@ -182,10 +186,7 @@ def evaluate_counterfactuals(counterfactuals:list):
         target = target[0].detach().numpy()
         target_distances.append(np.linalg.norm(counterfactual - target))
     
-
     return base_distances, target_distances
-
-
 
 #### Tests
 

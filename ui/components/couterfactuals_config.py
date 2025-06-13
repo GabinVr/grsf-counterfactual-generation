@@ -52,25 +52,79 @@ class CounterfactualsConfig:
         with tab2:
             self._render_local_counterfactuals()
     
+    def _render_cf_parameters(self, prefix="global"):
+        """
+        Render the parameters for counterfactual generation.
+        
+        :param prefix: Prefix for unique keys (e.g., "global" or "local")
+        """
+        
+        # Learning rate
+        cf_lr = st.number_input(
+            "Learning rate for counterfactual generation",
+            min_value=0.00001,
+            max_value=1.0,
+            value=0.001,
+            step=0.0001,
+            key=f"{prefix}_cf_lr",
+            help="Learning rate for the optimization process"
+        )
+        
+        # Number of epochs
+        cf_epochs = st.number_input(
+            "Number of epochs for counterfactual generation",
+            min_value=1,
+            max_value=5000,
+            value=100,
+            step=1,
+            key=f"{prefix}_cf_epochs",
+            help="Number of epochs for the optimization process"
+        )
+        
+        # Beta parameter
+        cf_beta = st.number_input(
+            "Beta parameter for counterfactual generation",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.5,
+            step=0.01,
+            key=f"{prefix}_cf_beta",
+            help="Beta parameter for the optimization process"
+        )
+        
+        return {
+            "learning_rate": cf_lr,
+            "epochs": cf_epochs,
+            "beta": cf_beta
+        }
+    
     def _render_global_counterfactuals(self):
         st.markdown("## 🔍 Counterfactuals generation parameters")
         nb_samples = st.number_input("Number of counterfactuals to generate", 
                                     min_value=1, 
                                     max_value=1000, 
                                     value=10, 
-                                    step=1)
+                                    step=1,
+                                    key="global_nb_samples")
         st.session_state.generation_params = {
             "nb_samples": nb_samples,
         }
+
+        cf_params = self._render_cf_parameters("global")
+
+
         
         st.divider()
-        if st.button("Generate Counterfactuals"):
+        if st.button("Generate Counterfactuals", key="global_generate_btn"):
             try:
                 st.session_state.counterfactuals_list = counterfactual_batch_generation(
                     grsf_classifier=self.grsf_model,
                     nn_classifier=self.surrogate_model,
                     split_dataset=self.split_dataset,
                     nb_samples=st.session_state.generation_params["nb_samples"],
+                    epochs=cf_params['epochs'],
+                    lr=cf_params['learning_rate'],
+                    beta=cf_params['beta']
                 )
                 st.success(f"Counterfactuals generated successfully! Total: {len(st.session_state.counterfactuals_list)}")
                 return st.session_state.counterfactuals_list
@@ -87,6 +141,12 @@ class CounterfactualsConfig:
         """
         st.markdown("## 📍 Local Counterfactuals Generation")
         st.info("Local counterfactuals generation is sample-specific only. (for now)")
+        # Params for local counterfactual generation
+        cf_params = self._render_cf_parameters("local")
+        cf_lr = cf_params['learning_rate']
+        cf_epochs = cf_params['epochs']
+        cf_beta = cf_params['beta']
+        
         st.markdown("### Select a sample to generate counterfactuals for")
         self._render_sample_selection()
         if 'selected_sample' in st.session_state and st.session_state.selected_sample is not None:
@@ -94,11 +154,14 @@ class CounterfactualsConfig:
             class_label = st.session_state.selected_sample['class_label']
             binary_mask = st.session_state.selected_sample['binary_mask']
             
-            if st.button("Generate Local Counterfactuals"):
+            if st.button("Generate Local Counterfactuals", key="local_generate_btn"):
                 local_counterfactual = self._generate_local_counterfactuals_from_selection(
                     sample=sample,
                     class_label=class_label,
-                    binary_mask=binary_mask
+                    binary_mask=binary_mask,
+                    epochs=cf_epochs,
+                    lr=cf_lr,
+                    beta=cf_beta
                 )
                 if local_counterfactual is not None:
                     st.session_state.local_counterfactual = local_counterfactual
@@ -128,10 +191,11 @@ class CounterfactualsConfig:
         selected_idx = st.selectbox(
             "Select a sample from the test set:",
             range(len(X_test)),
-            format_func=lambda x: f" {x + 1} (Class {y_test[x]})"
+            format_func=lambda x: f" {x + 1} (Class {y_test[x]})",
+            key="local_sample_selection"
         )
         
-        st.info(f"""To select a region in the time series, click on the bracket icon in the top right corner of the plot. 
+        st.info(f"""To select a region in the time series, click on the box select icon in the top right corner of the plot. 
                 Then, click and drag to select a region.""")
 
         if selected_idx is not None:
@@ -161,7 +225,7 @@ class CounterfactualsConfig:
             "class": class_label
         })
 
-        fig = px.scatter(sample, x="time", y="value", color="class",
+        fig = px.scatter(sample, x="time", y="value", 
                  title="Time Series Sample",
                  labels={"time": "Time", "value": "Value", "class": "Class"},
                  template="plotly_white")
@@ -184,13 +248,16 @@ class CounterfactualsConfig:
         return binary_mask
 
 
-    def _generate_local_counterfactuals_from_selection(self, sample, class_label, binary_mask):
+    def _generate_local_counterfactuals_from_selection(self, sample, class_label, binary_mask, cf_epochs, cf_lr, cf_beta):
         """
         Generate local counterfactuals from the selected region.
         
         :param sample: The original sample
         :param class_label: The class label of the sample
         :param binary_mask: Binary mask indicating selected points
+        :param cf_epochs: Number of epochs for optimization
+        :param cf_lr: Learning rate for optimization
+        :param cf_beta: Beta parameter for optimization
         """
         if not np.any(binary_mask):
             st.error("❌ No points selected in the binary mask. Please select a region to generate counterfactuals.")
@@ -215,6 +282,7 @@ class CounterfactualsConfig:
             if not torch.is_tensor(target_class):
                 target_class = torch.tensor(target_class, dtype=torch.int64)
 
+
             # Generate local counterfactuals
             local_counterfactual = counterfactual_local_generation(
                 grsf_classifier=self.grsf_model,
@@ -222,7 +290,10 @@ class CounterfactualsConfig:
                 target= target_sample,
                 base=sample_tensor,
                 base_label= class_label,
-                binary_mask=mask_tensor
+                binary_mask=mask_tensor,
+                epochs=cf_epochs,
+                learning_rate=cf_lr,
+                beta=cf_beta
             )
             if local_counterfactual is None:
                 st.error("❌ Failed to generate local counterfactual. Please check the selection and try again.")
@@ -238,7 +309,7 @@ class CounterfactualsConfig:
             
         except Exception as e:
             st.error(f"❌ Erreur lors de la génération: {str(e)}")
-            
+        
             
 class CounterfactualsAnalysisComponent:
     def __init__(self, counterfactuals_config: CounterfactualsConfig = None):
@@ -307,7 +378,8 @@ class CounterfactualsAnalysisComponent:
         selected_idx = st.selectbox(
             "Select counterfactual to analyze:",
             range(num_counterfactuals),
-            format_func=lambda x: f"Counterfactual {x + 1}"
+            format_func=lambda x: f"Counterfactual {x + 1}",
+            key="analysis_counterfactual_selection"
         )
         
         if selected_idx is not None:
@@ -362,7 +434,7 @@ class CounterfactualsAnalysisComponent:
             st.plotly_chart(fig, use_container_width=True)
         
                 # Grid view for multiple counterfactuals
-        if st.checkbox("Show Grid View of All Counterfactuals", value=True):
+        if st.checkbox("Show Grid View of All Counterfactuals", value=True, key="show_grid_view"):
             self._render_grid_view(counterfactuals)
         
 
@@ -504,7 +576,7 @@ class CounterfactualsAnalysisComponent:
         self._render_distance_distribution(distances_data)
         
         # PAA Analysis
-        if st.checkbox("Show PAA (Piecewise Aggregate Approximation) Analysis"):
+        if st.checkbox("Show PAA (Piecewise Aggregate Approximation) Analysis", key="show_paa_analysis"):
             self._render_paa_analysis(counterfactuals)
 
     def _calculate_distances(self, counterfactuals, grsf_classifier):
@@ -632,7 +704,7 @@ class CounterfactualsAnalysisComponent:
         """Render PAA (Piecewise Aggregate Approximation) analysis."""
         st.markdown("#### 🔍 PAA Analysis")
         
-        n_segments = st.slider("Number of PAA segments", min_value=3, max_value=20, value=10)
+        n_segments = st.slider("Number of PAA segments", min_value=3, max_value=20, value=10, key="paa_segments_slider")
         
         try:
             paa = PAA(window_size=n_segments)
@@ -878,6 +950,6 @@ class CounterfactualsAnalysisComponent:
         st.plotly_chart(fig, use_container_width=True)
         
         # Detailed validity table
-        if st.checkbox("Show detailed validity table"):
+        if st.checkbox("Show detailed validity table", key="show_validity_table"):
             validity_df = pd.DataFrame(validity_details)
             st.dataframe(validity_df, use_container_width=True)

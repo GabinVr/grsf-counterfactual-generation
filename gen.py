@@ -440,11 +440,10 @@ class CounterFactualCrafting:
     """
     Class for crafting counterfactuals for the GRSF algorithm using a surrogate classifier.
     """
-    def __init__(self, grsf_classifier:RandomShapeletClassifier, surrogate_classifier:BaseSurrogateClassifier, beta:float=0.5):
+    def __init__(self, grsf_classifier:RandomShapeletClassifier, surrogate_classifier:BaseSurrogateClassifier):
         self.grsf_classifier = grsf_classifier
         self.surrogate_classifier = surrogate_classifier
         self.closest_to_boundary = None
-        self.beta = beta
 
     def loss_fn(self, x, target, base, base_label):
         """
@@ -458,7 +457,7 @@ class CounterFactualCrafting:
         # loss += self.beta * torch.norm(x - base).pow(2)
         return loss
     
-    def generate_counterfactual(self, target, base, base_label, lr:float=0.01, epochs:int=100, debug:bool=True):
+    def generate_counterfactual(self, target, base, base_label, lr:float=0.01, epochs:int=100, debug:bool=True, beta:float=0.5):
         """
         Generate counterfactuals 
         """
@@ -479,7 +478,7 @@ class CounterFactualCrafting:
             x_temp = x - lr * x.grad
 
             # Backward step
-            x = (x_temp + lr * self.beta * base) / (1 + lr * self.beta)
+            x = (x_temp + lr * beta * base) / (1 + lr * beta)
             
             x = x.clone().detach().requires_grad_(True)
             x_test = x.clone().detach().numpy()
