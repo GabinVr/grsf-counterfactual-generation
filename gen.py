@@ -127,50 +127,7 @@ def grsf(dataset:str, params:dict, debug:bool=True):
     except ValueError as e:
         print(f"Error fitting classifier: {e}")
         return (1, "Error-code: Failed to fit the classifier")
-    # Predict the labels for the test set
-    try:
-        y_pred = classifier.predict(X_test)
-    except ValueError as e:
-        print(f"Error predicting labels: {e}")
-        return (1, "Error-code: Failed to predict labels")
-    # Print the accuracy
-    try:
-        accuracy = classifier.score(X_test, y_test)
-        if debug:
-            print(f"Accuracy: {accuracy:.2f}")
-    except ValueError as e:
-        print(f"Error calculating accuracy: {e}")
-        return (1, "Error-code: Failed to calculate accuracy")
-    # Calculate the confusion matrix
-    try:
-        cm = confusion_matrix(y_test, y_pred)
-    except ValueError as e:
-        print(f"Error calculating confusion matrix: {e}")
-        return (1, "Error-code: Failed to calculate confusion matrix")
-
-    if not debug:
-        return classifier, (X_train, y_train, X_test, y_test)
     
-    # Print the confusion matrix
-    print("Confusion Matrix:")
-    print(cm)
-    # Plot and save the confusion matrix
-    try:
-        plt.figure(figsize=(10, 7))
-        plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
-        plt.title('Confusion Matrix')
-        plt.colorbar()
-        tick_marks = np.arange(len(np.unique(y)))
-        plt.xticks(tick_marks, np.unique(y), rotation=45)
-        plt.yticks(tick_marks, np.unique(y))
-        plt.ylabel('True label')
-        plt.xlabel('Predicted label')
-        plt.tight_layout()
-        plt.savefig(f"confusion_matrix_{dataset}.png")
-    except Exception as e:
-        print(f"Error plotting confusion matrix: {e}")
-        return
-
     return classifier, (X_train, y_train, X_test, y_test)
 
 def evaluate_grsf(classifier:RandomShapeletClassifier, X_test, y_test, debug:bool=True):

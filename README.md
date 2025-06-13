@@ -54,7 +54,7 @@ There is two ways to try out the project:
 ## What's next?
 ### Short-term goals
 - [X] Add local counterfactual generation
-- [ ] Fix the bug with the number of counterfactuals generated
+- [X] Fix the bug with the number of counterfactuals generated
 - [ ] Add support for different loss functions (custom ?)
 - [ ] Finish custom surrogate model implementation in the streamlit app (safely)
 - [ ] Add support to save every parameters and results of the counterfactual generation process
