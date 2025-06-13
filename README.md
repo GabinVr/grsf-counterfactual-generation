@@ -57,6 +57,9 @@ There is two ways to try out the project:
 - [ ] Fix the bug with the number of counterfactuals generated
 - [ ] Add support for different loss functions (custom ?)
 - [ ] Finish custom surrogate model implementation in the streamlit app (safely)
+- [ ] Add support to save every parameters and results of the counterfactual generation process
+- [ ] Save and preload trained models in the Streamlit app
+
 ### Long-term goals
 - [ ] Add training logs visualization
 - [ ] Add more surrogate model architectures

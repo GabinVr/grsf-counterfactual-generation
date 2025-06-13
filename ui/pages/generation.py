@@ -189,14 +189,12 @@ class GenerationPage:
                     # Render counterfactuals generation UI
                     st.divider()
                     st.markdown("### 🎯 Generate Counterfactuals")
-                    # counterfactuals_config.render()
                     global_cf, local_cf = st.tabs(["🌍 Global", "📍 Local"])
                     with global_cf:
                         counterfactuals_config._render_global_counterfactuals()
                     with local_cf:
                         st.markdown("#### 📍 Local Counterfactuals Generation")
                         counterfactuals_config._render_local_counterfactuals()
-
 
         with tab4:
             # Get data from session state

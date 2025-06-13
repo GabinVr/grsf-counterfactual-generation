@@ -100,6 +100,7 @@ class CounterfactualsConfig:
     
     def _render_global_counterfactuals(self):
         st.markdown("## 🔍 Counterfactuals generation parameters")
+        st.info("Sample are chosen randomly from the test set. ")
         nb_samples = st.number_input("Number of counterfactuals to generate", 
                                     min_value=1, 
                                     max_value=1000, 
@@ -111,8 +112,6 @@ class CounterfactualsConfig:
         }
 
         cf_params = self._render_cf_parameters("global")
-
-
         
         st.divider()
         if st.button("Generate Counterfactuals", key="global_generate_btn"):
@@ -352,7 +351,7 @@ class CounterfactualsAnalysisComponent:
         tab1, tab2, tab3, tab4 = st.tabs(["🔍 Visual Analysis", "📏 Distance Analysis", "📈 Statistics", "🎯 Validity Check"])
         
         with tab1:
-            self._render_visual_analysis(counterfactuals)
+            self._render_visual_analysis(counterfactuals, grsf_classifier)
         
         with tab2:
             self._render_distance_analysis(counterfactuals, grsf_classifier)
@@ -363,7 +362,7 @@ class CounterfactualsAnalysisComponent:
         with tab4:
             self._render_validity_check(counterfactuals, grsf_classifier)
 
-    def _render_visual_analysis(self, counterfactuals):
+    def _render_visual_analysis(self, counterfactuals, grsf_classifier):
         """Render interactive time series visualizations of counterfactuals."""
         st.markdown("### 📈 Time Series Comparison")
 
@@ -381,6 +380,8 @@ class CounterfactualsAnalysisComponent:
             format_func=lambda x: f"Counterfactual {x + 1}",
             key="analysis_counterfactual_selection"
         )
+
+
         
         if selected_idx is not None:
             counterfactual, target, base = counterfactuals[selected_idx]
@@ -432,6 +433,9 @@ class CounterfactualsAnalysisComponent:
             )
             
             st.plotly_chart(fig, use_container_width=True)
+
+            validity = "✅" if grsf_classifier.predict(cf_np.reshape(1, -1)) != grsf_classifier.predict(base_np.reshape(1, -1)) else "❌"
+            st.markdown(f"This counterfactual is valid: {validity}")
         
                 # Grid view for multiple counterfactuals
         if st.checkbox("Show Grid View of All Counterfactuals", value=True, key="show_grid_view"):

@@ -21,20 +21,19 @@ def get_base_target_pair(X_test, y_test, nb_samples:int):
     # Group samples by class
     class_samples = {c: X_test[y_test == c] for c in classes}
     
-    # Sample from each class
-    for base_class in classes:
-        if len(class_samples[base_class]) < nb_samples:
-            print(f"Not enough samples for class {base_class}")
-            return None
+
             
-        for i in range(nb_samples):
-            # Get target class different from base class
-            target_class = np.random.choice(classes[classes != base_class])
-            target_sample = class_samples[target_class][np.random.randint(len(class_samples[target_class]))]
-            base_target_pairs.append((
-                (class_samples[base_class][i], base_class),
-                (target_sample, target_class)
-            ))
+    for i in range(nb_samples):
+        # Get a random base class
+        base_class = np.random.choice(classes)
+        base_sample = class_samples[base_class][np.random.randint(len(class_samples[base_class]))]
+        # Get target class different from base class
+        target_class = np.random.choice(classes[classes != base_class])
+        target_sample = class_samples[target_class][np.random.randint(len(class_samples[target_class]))]
+        base_target_pairs.append((
+            (base_sample, base_class),
+            (target_sample, target_class)
+        ))
             
     return base_target_pairs
 
@@ -197,6 +196,7 @@ def test_get_base_target_pair():
         print(f"Debug: dataset: {dataset}")
         X, y = wb_datasets.load_dataset(dataset)
         base_target_pairs = get_base_target_pair(X, y, 10)
+        assert len(base_target_pairs) == 10, f"Expected 10 base-target pairs, got {len(base_target_pairs)}"
         if base_target_pairs is None:
             print("test_get_base_target_pair: failed")
             fails += 1
@@ -209,6 +209,7 @@ def test_get_base_target_pair():
         X = torch.tensor(X, dtype=torch.float32)
         y = torch.tensor(y, dtype=torch.long)
         base_target_pairs = get_base_target_pair(X, y, 10)
+        assert len(base_target_pairs) == 10, f"Expected 10 base-target pairs, got {len(base_target_pairs)}"
         if base_target_pairs is None:
             print("test_get_base_target_pair: failed")
             fails += 1
@@ -347,6 +348,10 @@ if __name__ == "__main__":
         "alphas": [0.1, 0.5, 0.9]
     }
     dataset = wb_datasets.load_dataset(dataset_name)
+
+    test_get_base_target_pair()
+    input("Press Enter to continue with counterfactual crafting...")
+
     # grsf_classifier, _ = gen.grsf(dataset_name, params, debug=False)
     # print(f"Simple classifier:")
     # classifier = gen.SimpleSurogateClassifier(input_size=dataset[0].shape[1], hidden_size=100, output_size=len(np.unique(dataset[1])))
