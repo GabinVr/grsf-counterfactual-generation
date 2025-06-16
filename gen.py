@@ -217,7 +217,8 @@ class BaseSurrogateClassifier(Module):
               lr:float=0.01, 
               criterion:torch.nn.Module=torch.nn.CrossEntropyLoss(), 
               optimizer:torch.optim.Optimizer=torch.optim.Adam,
-              debug:bool=True
+              debug:bool=True,
+              training_callback:callable=None
               ):
         """
         Train the surrogate classifier.
@@ -228,6 +229,7 @@ class BaseSurrogateClassifier(Module):
         criterion is the loss function
         optimizer is the optimizer
         debug is a boolean to print the training progress
+        training_callback is a function that will be called at the end of each epoch
         """
         # self.parameters() is a generator that yields the parameters of the model
         optimizer = optimizer(self.parameters(), lr=lr)
@@ -257,6 +259,8 @@ class BaseSurrogateClassifier(Module):
             
             if (epoch+1) % 10 == 0 and debug:
                 print(f"Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.4f}")
+            if training_callback is not None:
+                training_callback(epoch, loss.item())
         if debug:
             print("Training complete.")
         return self
@@ -414,9 +418,25 @@ class CounterFactualCrafting:
         # loss += self.beta * torch.norm(x - base).pow(2)
         return loss
     
-    def generate_counterfactual(self, target, base, base_label, lr:float=0.01, epochs:int=100, debug:bool=True, beta:float=0.5):
+    def generate_counterfactual(self, target, base, base_label, 
+                                lr:float=0.01,
+                                epochs:int=100,
+                                debug:bool=True,
+                                beta:float=0.5,
+                                training_callback:callable=None
+                                ):
         """
         Generate counterfactuals 
+        :target: torch.Tensor, the target sample
+        :base: torch.Tensor, the base sample
+        :base_label: int, the label of the base sample
+        :lr: float, learning rate for the optimization
+        :epochs: int, number of epochs for the optimization
+        :debug: bool, whether to print debug information
+        :beta: float, regularization parameter
+        :training_callback: callable, a function to call at the end of each epoch for custom training logic
+        Generates a counterfactual sample that is close to the base sample
+        but has a different prediction from the GRSF classifier.
         """
         
         x = base.clone().detach().requires_grad_(True)
@@ -452,12 +472,19 @@ class CounterFactualCrafting:
         
             if (epoch+1) % 10 == 0 and debug:
                 print(f"Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.4f}")
-        
+            if training_callback is not None:
+                training_callback(epoch, loss.item())
+    
         if debug:
             print("Counterfactual generation complete.")
         return x
     
-    def generate_local_counterfactuals(self, target, base, base_label, binary_mask, lr:float=0.01, epochs:int=100, debug:bool=True, beta:float=0.5):
+    def generate_local_counterfactuals(self, target, base, base_label, binary_mask, 
+                                       lr:float=0.01,
+                                       epochs:int=100,
+                                       debug:bool=True,
+                                       beta:float=0.5,
+                                       training_callback:callable=None):
         """
         Generate local counterfactuals
         :target: torch.Tensor, the target sample
@@ -468,6 +495,7 @@ class CounterFactualCrafting:
         :epochs: int, number of epochs for the optimization
         :debug: bool, whether to print debug information
         :beta: float, regularization parameter
+        :training_callback: callable, a function to call at the end of each epoch for custom training logic
         """
         
         assert isinstance(binary_mask, torch.Tensor), "binary_mask must be a torch.Tensor"
@@ -526,6 +554,9 @@ class CounterFactualCrafting:
                     print(f"  From class {pred_backup} to class {pred}")
                 self.closest_to_boundary = x_backup
                 break
+                
+            if training_callback is not None:
+                training_callback(epoch, total_loss.item())
         
         if debug:
             print("Counterfactual generation complete.")

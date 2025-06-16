@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
+from code_editor import code_editor
 import numpy as np
 import torch
 import wildboar.distance as wb_distance
@@ -116,6 +117,7 @@ class CounterfactualsConfig:
         st.divider()
         if st.button("Generate Counterfactuals", key="global_generate_btn"):
             try:
+                st.session_state.training_progress = ""
                 st.session_state.counterfactuals_list = counterfactual_batch_generation(
                     grsf_classifier=self.grsf_model,
                     nn_classifier=self.surrogate_model,
@@ -123,8 +125,10 @@ class CounterfactualsConfig:
                     nb_samples=st.session_state.generation_params["nb_samples"],
                     epochs=cf_params['epochs'],
                     lr=cf_params['learning_rate'],
-                    beta=cf_params['beta']
+                    beta=cf_params['beta'],
+                    training_callback=self._training_callback
                 )
+                self._render_training_trace()
                 st.success(f"Counterfactuals generated successfully! Total: {len(st.session_state.counterfactuals_list)}")
                 return st.session_state.counterfactuals_list
             except Exception as e:
@@ -133,6 +137,26 @@ class CounterfactualsConfig:
                 getLogger(__name__).error(error_msg)
                 st.session_state.counterfactuals_list = None
                 return None
+    
+    def _render_training_trace(self):
+        """
+        Render the training trace of the counterfactual generation.
+        """
+        if st.session_state.training_progress:
+            code_editor(st.session_state.training_progress, height=13, focus=False)       
+        return 
+
+    @staticmethod
+    def _training_callback(epoch, loss):
+        """
+        Callback function to render training progress.
+        
+        :param epoch: Current epoch number
+        :param loss: Current loss value
+        """
+        print(f"DEBUG Epoch {epoch + 1}: Loss = {loss:.4f}")
+        st.session_state.training_progress += f"Epoch {epoch + 1}: Loss = {loss:.4f}\n"
+        return
             
     def _render_local_counterfactuals(self):
         """
@@ -166,13 +190,52 @@ class CounterfactualsConfig:
                     st.session_state.local_counterfactual = local_counterfactual
                     st.success("Local counterfactual generated successfully!")
                     st.session_state.counterfactuals_list = [local_counterfactual]  # Update the list with the new counterfactual
+                    self._render_validity_count("local", st.session_state.counterfactuals_list)
                     return local_counterfactual
                 else:
                     st.error("❌ Failed to generate local counterfactual. Please check the selection and try again.")
             else:
                 st.warning("Please select a sample and a region to generate local counterfactuals.")
-
     
+
+    def _render_validity_count(self, prefix, counterfactuals):
+        """
+        Render the validity count for the generated counterfactual.
+        
+        :param prefix: Prefix for unique keys (e.g., "global" or "local")
+        :param counterfactuals: The generated local counterfactual
+        """
+        if counterfactuals is None:
+            st.error("❌ No counterfactual generated.")
+            return
+        
+        # Check validity
+        grsf_classifier = self.grsf_model
+        if grsf_classifier is None:
+            st.error("❌ GRSF model not available for validity check.")
+            return
+        
+        nb_valid = 0
+        for cf_triplet in counterfactuals:
+            counterfactual, target, base = cf_triplet
+            if not torch.is_tensor(counterfactual):
+                counterfactual = torch.tensor(counterfactual, dtype=torch.float32)
+            if not torch.is_tensor(target[0]):
+                target = (torch.tensor(target[0], dtype=torch.float32), target[1])
+            if not torch.is_tensor(base[0]):
+                base = (torch.tensor(base[0], dtype=torch.float32), base[1])
+            
+            # Check validity
+            try:
+                if grsf_classifier.predict(counterfactual.reshape(1, -1)) != grsf_classifier.predict(base[0].reshape(1, -1)):
+                    nb_valid += 1
+            except Exception as e:
+                st.error(f"❌ Error during validity check: {str(e)}")
+        
+        st.divider()
+        st.markdown(f"### Validity Check for {prefix} Counterfactuals")
+        st.markdown(f"Valid Counterfactuals: {nb_valid} out of {len(counterfactuals)}")
+
     def _render_sample_selection(self):
         """
         Render the sample selection UI for local counterfactuals generation.
@@ -247,16 +310,16 @@ class CounterfactualsConfig:
         return binary_mask
 
 
-    def _generate_local_counterfactuals_from_selection(self, sample, class_label, binary_mask, cf_epochs, cf_lr, cf_beta):
+    def _generate_local_counterfactuals_from_selection(self, sample, class_label, binary_mask, epochs, lr, beta):
         """
         Generate local counterfactuals from the selected region.
         
         :param sample: The original sample
         :param class_label: The class label of the sample
         :param binary_mask: Binary mask indicating selected points
-        :param cf_epochs: Number of epochs for optimization
-        :param cf_lr: Learning rate for optimization
-        :param cf_beta: Beta parameter for optimization
+        :param epochs: Number of epochs for optimization
+        :param lr: Learning rate for optimization
+        :param beta: Beta parameter for optimization
         """
         if not np.any(binary_mask):
             st.error("❌ No points selected in the binary mask. Please select a region to generate counterfactuals.")
@@ -290,9 +353,9 @@ class CounterfactualsConfig:
                 base=sample_tensor,
                 base_label= class_label,
                 binary_mask=mask_tensor,
-                epochs=cf_epochs,
-                learning_rate=cf_lr,
-                beta=cf_beta
+                epochs=epochs,
+                lr=lr,
+                beta=beta
             )
             if local_counterfactual is None:
                 st.error("❌ Failed to generate local counterfactual. Please check the selection and try again.")
@@ -439,11 +502,11 @@ class CounterfactualsAnalysisComponent:
         
                 # Grid view for multiple counterfactuals
         if st.checkbox("Show Grid View of All Counterfactuals", value=True, key="show_grid_view"):
-            self._render_grid_view(counterfactuals)
+            self._render_grid_view(counterfactuals, grsf_classifier)
         
 
 
-    def _render_grid_view(self, counterfactuals):
+    def _render_grid_view(self, counterfactuals, grsf_classifier):
         """Render a grid view of multiple counterfactuals."""
         st.markdown("### 📊 Grid View - All Counterfactuals")
         
@@ -510,6 +573,18 @@ class CounterfactualsAnalysisComponent:
                           showlegend=(i == 0)), 
                 row=row, col=col
             )
+
+            if grsf_classifier.predict(cf_np.reshape(1, -1)) != grsf_classifier.predict(base_np.reshape(1, -1)):
+                validity = "✅"
+            else:
+                validity = "❌"
+            fig.add_annotation(
+                text=f"Valid: {validity}",
+                xref="paper", yref="paper",
+                showarrow=False,
+                font=dict(size=12, color="black"),
+                row=row, col=col
+            )
         
         fig.update_layout(
             height=300 * rows,
@@ -517,7 +592,10 @@ class CounterfactualsAnalysisComponent:
             template='plotly_white'
         )
         
+        
+
         st.plotly_chart(fig, use_container_width=True)
+
 
     def _render_distance_analysis(self, counterfactuals, grsf_classifier):
         """Render distance-based analysis with interactive charts."""

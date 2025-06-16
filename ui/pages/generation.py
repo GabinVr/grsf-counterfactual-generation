@@ -99,73 +99,73 @@ class GenerationPage:
                     st.write(f"Accuracy: {model_config.evaluate_model(st.session_state['trained_grsf_model'], st.session_state['split_dataset']) * 100:.2f}%")
                 
         with tab3:
-            st.markdown("### 🎯 Generation parameters")
-            st.markdown("Here you can choose the parameters, the model architecture, the loss function...")
-            if 'trained_grsf_model' not in st.session_state:
-                st.warning("Please train the GRSF model first in the previous tab.")
-            else:
+            with st.expander("### 🎯 Generation parameters"):
+                st.markdown("### 🎯 Generation parameters")
+                st.markdown("Here you can choose the parameters, the model architecture, the loss function...")
+                if 'trained_grsf_model' not in st.session_state:
+                    st.warning("Please train the GRSF model first in the previous tab.")
+                else:
 
-                st.divider()
-                st.markdown("## 🛜 model selection")
-                # let the user choose the model architecture and save it in the session state
-                selected_model = st.selectbox(
-                    "Select a surrogate model",
-                    dnnUtils.get_available_models().keys(),
-                    help="Choose the surrogate model architecture for counterfactual generation"
-                )
-                # Save the selected model in the session state
-                st.session_state['selected_model'] = selected_model
-
-                with st.expander("## 🛠 write your own ?"):
-                    # Display the template for custom model (code in the file `template_custom_model.txt`)
-                    st.markdown("You can fill in the code below to implement your own model architecture.")
-                    try:
-                        with open("ui/templates/template_custom_model.txt", "r") as file:
-                            template_code = file.read()
-                    except FileNotFoundError:
-                        st.info("Template file not found. Please ensure the file exists in the correct path.")
-                        template_code = ""
-                    response_button = [{"name": "Finish"}]
-                    response_dict = code_editor(template_code, buttons=response_button)
-                    st.info(f"Custom model code updated: {response_dict}")
                     st.divider()
-                st.divider()
-                st.markdown("## ✨ Model parameters")
-                # Todo - Add method in every model to give parameters needed
-                dnn_model = dnnUtils.get_available_models()[st.session_state['selected_model']]
-                dnn_model_conf = dnnConfig(dnn_model)
-                dnn_model_conf.set_params(
-                    sample_size=st.session_state['sample_size'],
-                    num_classes=st.session_state['num_classes']
-                )
-                dnn_model_conf.render()
-                st.divider()
-                st.markdown("### Training parameters")
-                # epochs 
-                epochs = st.number_input(
-                    "Number of epochs",
-                    min_value=1,
-                    max_value=1000,
-                    value=100,
-                    help="Number of epochs for training the surrogate model"
-                )
-                st.session_state['epochs'] = epochs
-                # learning rate
-                learning_rate = st.number_input(
-                    "Learning rate",
-                    min_value=0.0001,
-                    max_value=0.1,
-                    value=0.001,
-                    step=0.0001,
-                    help="Learning rate for training the surrogate model"
-                )
-                
+                    st.markdown("## 🛜 model selection")
+                    # let the user choose the model architecture and save it in the session state
+                    selected_model = st.selectbox(
+                        "Select a surrogate model",
+                        dnnUtils.get_available_models().keys(),
+                        help="Choose the surrogate model architecture for counterfactual generation"
+                    )
+                    # Save the selected model in the session state
+                    st.session_state['selected_model'] = selected_model
+
+                    # with st.expander("## 🛠 write your own ?"):
+                    #     # Display the template for custom model (code in the file `template_custom_model.txt`)
+                    #     st.markdown("You can fill in the code below to implement your own model architecture.")
+                    #     try:
+                    #         with open("ui/templates/template_custom_model.txt", "r") as file:
+                    #             template_code = file.read()
+                    #     except FileNotFoundError:
+                    #         st.info("Template file not found. Please ensure the file exists in the correct path.")
+                    #         template_code = ""
+                    #     response_button = [{"name": "Finish"}]
+                    #     response_dict = code_editor(template_code, buttons=response_button)
+                    #     st.info(f"Custom model code updated: {response_dict}")
+                    #     st.divider()
+                    st.divider()
+                    st.markdown("## ✨ Model parameters")
+                    # Todo - Add method in every model to give parameters needed
+                    dnn_model = dnnUtils.get_available_models()[st.session_state['selected_model']]
+                    dnn_model_conf = dnnConfig(dnn_model)
+                    dnn_model_conf.set_params(
+                        sample_size=st.session_state['sample_size'],
+                        num_classes=st.session_state['num_classes']
+                    )
+                    dnn_model_conf.render()
+                    st.divider()
+                    st.markdown("### Training parameters")
+                    # epochs 
+                    epochs = st.number_input(
+                        "Number of epochs",
+                        min_value=1,
+                        max_value=1000,
+                        value=100,
+                        help="Number of epochs for training the surrogate model"
+                    )
+                    st.session_state['epochs'] = epochs
+                    # learning rate
+                    learning_rate = st.number_input(
+                        "Learning rate",
+                        min_value=0.0001,
+                        max_value=0.1,
+                        value=0.001,
+                        step=0.0001,
+                        help="Learning rate for training the surrogate model"
+                    )
+            
+            if 'trained_grsf_model' in st.session_state and st.session_state['trained_grsf_model'] is not None:
                 # Add a button to launch the training of the model
                 if st.button("🚀 Train Surrogate Model", type="primary", use_container_width=True):
                     with st.spinner("Training surrogate model..."):
                         try:
-                            st.info(f"split dataset: {len(st.session_state['split_dataset'])} ")
-
                             st.session_state['trained_surrogate_model'] = dnn_model_conf.train_model(st.session_state['split_dataset'], epochs=epochs, learning_rate=learning_rate)
                             st.success("Surrogate model trained successfully!")
                             st.divider()
@@ -185,8 +185,13 @@ class GenerationPage:
                         st.session_state['counterfactuals_config'] = counterfactuals_config
                     else:
                         counterfactuals_config = st.session_state['counterfactuals_config']
-                    
-                    # Render counterfactuals generation UI
+
+            with st.expander("### Counterfactuals Generation Configuration"): 
+                # Render counterfactuals generation UI
+                if 'counterfactuals_config' not in st.session_state:
+                    st.info("Initializing counterfactuals configuration...")
+                else:
+                    counterfactuals_config = st.session_state['counterfactuals_config']
                     st.divider()
                     st.markdown("### 🎯 Generate Counterfactuals")
                     global_cf, local_cf = st.tabs(["🌍 Global", "📍 Local"])
@@ -197,6 +202,7 @@ class GenerationPage:
                         counterfactuals_config._render_local_counterfactuals()
 
         with tab4:
+
             # Get data from session state
             counterfactuals = st.session_state.get('counterfactuals_list', None)
             grsf_model = st.session_state.get('trained_grsf_model', None)

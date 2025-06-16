@@ -6,7 +6,7 @@ import sys
 import os
 from typing import Dict, Any
 from core.AppConfig import AppConfig
-
+from code_editor import code_editor
 import logging
 from logging import getLogger
 
@@ -76,7 +76,6 @@ class useDNN:
         """
         try:
             model_instance = self.model(**kwargs)
-            st.info(f"Model {self.model.__name__} configured successfully with parameters: {kwargs}")
             return model_instance
         except Exception as e:
             st.error(f"Error configuring model {self.model.__name__}: {str(e)}")
@@ -165,12 +164,41 @@ class dnnConfig:
         """
         try:
             X_train, y_train, _, _ = split_dataset
-            return self.model.train(X_train, y_train, epochs=epochs, lr=learning_rate)
+            st.session_state["surrogate_training_progress"] = ""
+            out =  self.model.train(X_train, y_train, epochs=epochs, lr=learning_rate, 
+                                    training_callback=self._training_callback, debug=True)
+            self._render_training_trace()
+            return out
         except Exception as e:
             st.error(f"Error training DNN model: {str(e)}")
             logging.error(f"Error training DNN model: {str(e)}")
             return None
     
+    def _render_training_trace(self) -> None:
+        """
+        Render the training trace of the DNN model.
+        """
+        if "surrogate_training_progress" in st.session_state:
+            code_editor(st.session_state["surrogate_training_progress"], 
+                        height=7,
+                        focus=False)
+        st.session_state["surrogate_training_progress"] = ""
+        return
+
+
+
+    @staticmethod 
+    def _training_callback(epoch: int, loss: float) -> None:
+        """
+        Callback function to display training progress.
+        
+        Args:
+            epoch: Current epoch number
+            loss: Loss value for the current epoch
+        """
+        st.session_state["surrogate_training_progress"] += f"Epoch {epoch + 1}: Loss = {loss:.4f}\n"
+        return
+
     def evaluate_model(self, model: gen.BaseSurrogateClassifier, dataset: tuple) -> float:
         """
         Evaluate the DNN model on the given dataset.

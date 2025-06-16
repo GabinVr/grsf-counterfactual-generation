@@ -98,13 +98,18 @@ def counterfactual_batch(dataset:str, params:dict, nb_samples:int=10, nn_classif
     return counterfactuals
 
 def counterfactual_batch_generation(grsf_classifier, nn_classifier, split_dataset, nb_samples:int=10, debug:bool=True, 
-                                    lr:float=0.036, epochs:int=500, beta:float=0.80):
+                                    lr:float=0.036, epochs:int=500, beta:float=0.80, training_callback=None):
     """
     Generate a batch of nb_samples counterfactuals for a given dataset
     grsf_classifier: the GRSF model to use
     nn_classifier: a pre-trained surrogate classifier
     split_dataset: the dataset (X_train, y_train, X_test, y_test) to use for counterfactual generation
     nb_samples: the number of counterfactuals to generate
+    debug: whether to print debug information
+    lr: the learning rate for the counterfactual crafting
+    epochs: the number of epochs for the counterfactual crafting
+    beta: the beta parameter for the counterfactual crafting
+    training_callback: a callback function to call during training
     return: a list of triplets (counterfactual, target, base)
     """
 
@@ -131,12 +136,13 @@ def counterfactual_batch_generation(grsf_classifier, nn_classifier, split_datase
         counterfactual_sample = counterfactual.generate_counterfactual(target_sample, base_sample, base_label, debug=debug,
                                                                      epochs=epochs, 
                                                                      lr=lr, 
-                                                                     beta=beta)
+                                                                     beta=beta,
+                                                                    training_callback=training_callback)
         counterfactuals.append((counterfactual_sample, target, base))
     
     return counterfactuals
 
-def counterfactual_local_generation(grsf_classifier, classifier, target, base, base_label, binary_mask, epochs=500, lr=0.036, beta=0.80):
+def counterfactual_local_generation(grsf_classifier, classifier, target, base, base_label, binary_mask, epochs=500, lr=0.036, beta=0.80, training_callback=None):
     """
     Generate a local counterfactual for a given target and base instance
     grsf_classifier: the trained GRSF model to use
@@ -156,7 +162,8 @@ def counterfactual_local_generation(grsf_classifier, classifier, target, base, b
         epochs=epochs,
         lr=lr,
         beta=beta,
-        debug=True
+        debug=True,
+        training_callback=training_callback
     )
     
     local_counterfactual_sample = local_counterfactual_sample.detach().numpy()
