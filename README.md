@@ -59,9 +59,11 @@ There is two ways to try out the project:
 - [ ] Finish custom surrogate model implementation in the streamlit app (safely)
 - [ ] Add support to save every parameters and results of the counterfactual generation process
 - [ ] Save and preload trained models in the Streamlit app
+- [X] Add training logs visualization
+      -> Note to self: I should build a new module for this that would be unified across the project.
+      and then I could use it to save the experiment logs / load them in the Streamlit app.
 
 ### Long-term goals
-- [ ] Add training logs visualization
 - [ ] Add more surrogate model architectures
 - [ ] Implement additional counterfactual generation methods
 - [ ] Add support for multivariate time series

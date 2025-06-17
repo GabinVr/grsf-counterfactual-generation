@@ -168,7 +168,6 @@ class GenerationPage:
                         try:
                             st.session_state['trained_surrogate_model'] = dnn_model_conf.train_model(st.session_state['split_dataset'], epochs=epochs, learning_rate=learning_rate)
                             st.success("Surrogate model trained successfully!")
-                            st.divider()
                             accuracy = dnn_model_conf.evaluate_model(st.session_state['trained_surrogate_model'], st.session_state['split_dataset'])
                             st.markdown(f"#### 🚀 Surrogate Model Accuracy: {accuracy * 100:.2f}%")
                         except Exception as e:
@@ -186,19 +185,16 @@ class GenerationPage:
                     else:
                         counterfactuals_config = st.session_state['counterfactuals_config']
 
-            with st.expander("### Counterfactuals Generation Configuration"): 
+            with st.expander("### 🎯 Generate Counterfactuals"):
                 # Render counterfactuals generation UI
                 if 'counterfactuals_config' not in st.session_state:
                     st.info("Initializing counterfactuals configuration...")
                 else:
                     counterfactuals_config = st.session_state['counterfactuals_config']
-                    st.divider()
-                    st.markdown("### 🎯 Generate Counterfactuals")
                     global_cf, local_cf = st.tabs(["🌍 Global", "📍 Local"])
                     with global_cf:
                         counterfactuals_config._render_global_counterfactuals()
                     with local_cf:
-                        st.markdown("#### 📍 Local Counterfactuals Generation")
                         counterfactuals_config._render_local_counterfactuals()
 
         with tab4:

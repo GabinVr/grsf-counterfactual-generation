@@ -191,6 +191,7 @@ class CounterfactualsConfig:
                     st.success("Local counterfactual generated successfully!")
                     st.session_state.counterfactuals_list = [local_counterfactual]  # Update the list with the new counterfactual
                     self._render_validity_count("local", st.session_state.counterfactuals_list)
+                    st.rerun()
                     return local_counterfactual
                 else:
                     st.error("❌ Failed to generate local counterfactual. Please check the selection and try again.")
@@ -251,12 +252,47 @@ class CounterfactualsConfig:
             return
         
         selected_idx = st.selectbox(
-            "Select a sample from the test set:",
+            "Select a base sample from the test set:",
             range(len(X_test)),
             format_func=lambda x: f" {x + 1} (Class {y_test[x]})",
             key="local_sample_selection"
         )
+
+        # let the user choose a target sample/class
+        if selected_idx is not None:
+            st.markdown(f"Select a target sample:")
+            rand_select = st.toggle("🌈 Randomly select a target sample", key="random_target_sample_toggle", value=True)
         
+            if rand_select and "selected_target" not in st.session_state:
+                _, _, X_test, y_test = st.session_state.split_dataset
+                target_sample, target_class = get_target_from_base_class(y_test[selected_idx], y_test, X_test)
+                st.session_state.selected_sample = {
+                    "sample": X_test[selected_idx],
+                    "class_label": y_test[selected_idx],
+                    "binary_mask": None
+                }
+                st.session_state.selected_target = {
+                    "sample": target_sample,
+                    "class_label": target_class
+                }
+                st.success(f"Randomly selected target sample: Class {target_class}")
+            else:
+                filtered_X_test = { x: idx for idx, x in enumerate(range(len(X_test))) if y_test[idx] != y_test[selected_idx] }
+                target_idx = st.selectbox(
+                    "Manual selection of target sample:",
+                    list(filtered_X_test.keys()),
+                    format_func=lambda x: f" {x + 1} (Class {y_test[filtered_X_test[x]]})",
+                    key="target_sample_selection"
+                )
+                if target_idx is not None:
+                    target_sample = X_test[filtered_X_test[target_idx]]
+                    target_class = y_test[filtered_X_test[target_idx]]
+                    st.session_state.selected_target = {
+                        "sample": target_sample,
+                        "class_label": target_class
+                    }
+                    st.success(f"Selected target sample: Class {target_class}")
+
         st.info(f"""To select a region in the time series, click on the box select icon in the top right corner of the plot. 
                 Then, click and drag to select a region.""")
 
@@ -280,14 +316,27 @@ class CounterfactualsConfig:
         if torch.is_tensor(sample):
             sample = sample.detach().numpy()
         
-        # Convert to df
-        sample = pd.DataFrame({
-            "time": range(len(sample)),
-            "value": sample,
-            "class": class_label
-        })
+        # Store original sample length for binary mask
+        original_sample_length = len(sample)
+        
+        if "selected_target" in st.session_state and st.session_state.selected_target is not None:
+            target_sample = st.session_state.selected_target['sample']
+            target_class = st.session_state.selected_target['class_label']
+            combined_df = pd.DataFrame({
+                "time": list(range(len(sample))) + list(range(len(target_sample))),
+                "value": list(sample) + list(target_sample),
+                "series_type": ["Sample"] * len(sample) + ["Target"] * len(target_sample),
+                "class": [class_label] * len(sample) + [target_class] * len(target_sample)
+            })
+        else:    
+            combined_df = pd.DataFrame({
+                "time": range(len(sample)),
+                "value": sample,
+                "class": class_label
+            })
 
-        fig = px.scatter(sample, x="time", y="value", 
+        fig = px.scatter(combined_df, x="time", y="value", 
+                 color="series_type",
                  title="Time Series Sample",
                  labels={"time": "Time", "value": "Value", "class": "Class"},
                  template="plotly_white")
@@ -299,10 +348,12 @@ class CounterfactualsConfig:
                                 key="time serie", 
                                 on_select="rerun")
         idx_selected = event['selection']['point_indices']
-        binary_mask = np.zeros(len(sample), dtype=bool)
+        # Create binary mask only for the original sample length
+        binary_mask = np.zeros(original_sample_length)
         if idx_selected is not None and len(idx_selected) > 0:
             for idx in idx_selected:
-                if 0 <= idx < len(sample):
+                # Only consider indices that correspond to the original sample (not target)
+                if 0 <= idx < original_sample_length:
                     binary_mask[idx] = 1
         else:
             return
@@ -326,6 +377,10 @@ class CounterfactualsConfig:
             return
         
         try:
+            if 'selected_target' in st.session_state and st.session_state.selected_target is not None:
+                target_sample = st.session_state.selected_target['sample']
+                target_class = st.session_state.selected_target['class_label']
+                        
             # Convert sample to tensor if needed
             if not torch.is_tensor(sample):
                 sample_tensor = torch.tensor(sample, dtype=torch.float32)
@@ -337,7 +392,7 @@ class CounterfactualsConfig:
 
             # Get a random sample from an other class
             _, _, X_test, y_test = st.session_state.split_dataset
-            target_sample, target_class = get_target_from_base_class(class_label, y_test, X_test)
+            # target_sample, target_class = get_target_from_base_class(class_label, y_test, X_test)
 
             if not torch.is_tensor(target_sample):
                 target_sample = torch.tensor(target_sample, dtype=torch.float32)
