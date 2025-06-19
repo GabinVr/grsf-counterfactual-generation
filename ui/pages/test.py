@@ -7,6 +7,8 @@ import torch
 import plotly.express as px
 import plotly.graph_objects as go
 
+from components.sample_select import SampleSelectComponent
+
 def render_interactive_plot_with_selection(sample, target, class_label, target_class):
     """
     Render the visualization for a selected sample and 
@@ -156,4 +158,15 @@ def main():
             st.plotly_chart(fig_result, use_container_width=True)
 
 if __name__ == "__main__":
-    main()
+    # main()
+    st.info("test")
+    st.session_state.sample_select = SampleSelectComponent(
+        sample=np.sin(np.linspace(0, 8 * np.pi, 500)),
+        target=np.sin(np.linspace(0, 8 * np.pi, 500)) + np.random.normal(0, 0.1, 500),
+        sample_class="Sample",
+        target_class="Target"
+    )
+
+
+    st.session_state.sample_select.render()
+    st.info(f"Binary mask: {st.session_state.sample_select.get_binary_mask()}")

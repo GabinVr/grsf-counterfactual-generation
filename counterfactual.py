@@ -142,7 +142,7 @@ def counterfactual_batch_generation(grsf_classifier, nn_classifier, split_datase
     
     return counterfactuals
 
-def counterfactual_local_generation(grsf_classifier, classifier, target, base, base_label, binary_mask, epochs=500, lr=0.036, beta=0.80, training_callback=None):
+def counterfactual_local_generation(grsf_classifier, classifier, target, base, base_label, binary_mask, epochs=500, lr=0.036, beta=0.80, training_callback=None) -> np.ndarray:
     """
     Generate a local counterfactual for a given target and base instance
     grsf_classifier: the trained GRSF model to use
@@ -157,6 +157,7 @@ def counterfactual_local_generation(grsf_classifier, classifier, target, base, b
     crafter = gen.CounterFactualCrafting(grsf_classifier, classifier)
 
     # Generate the local counterfactual
+    print(f"DEBUG counterfactual.py: Generating local counterfactual for target {target} and base {base} with label {base_label}")
     local_counterfactual_sample = crafter.generate_local_counterfactuals(
         target, base, base_label, binary_mask, 
         epochs=epochs,
@@ -167,6 +168,7 @@ def counterfactual_local_generation(grsf_classifier, classifier, target, base, b
     )
     
     local_counterfactual_sample = local_counterfactual_sample.detach().numpy()
+    print(f"DEBUG counterfactual.py: Local counterfactual generated: {local_counterfactual_sample}")
     return local_counterfactual_sample
 
 def evaluate_counterfactuals(counterfactuals:list):

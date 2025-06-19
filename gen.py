@@ -405,6 +405,7 @@ class CounterFactualCrafting:
         self.grsf_classifier = grsf_classifier
         self.surrogate_classifier = surrogate_classifier
         self.closest_to_boundary = None
+        print(f"DEBUG gen.py CounterFactualCrafting: {grsf_classifier}, {surrogate_classifier}")
 
     def loss_fn(self, x, target, base, base_label):
         """
@@ -438,12 +439,19 @@ class CounterFactualCrafting:
         Generates a counterfactual sample that is close to the base sample
         but has a different prediction from the GRSF classifier.
         """
+        # Verify that inputs are torch tensors
+        if not isinstance(target, torch.Tensor):
+            target = torch.tensor(target, dtype=torch.float32)
+        if not isinstance(base, torch.Tensor):
+            base = torch.tensor(base, dtype=torch.float32)
+        if not isinstance(base_label, torch.Tensor):
+            base_label = torch.tensor(base_label, dtype=torch.long)
+
         
         x = base.clone().detach().requires_grad_(True)
 
         for epoch in range(epochs):
             x_backup = x.clone().detach().numpy()
-
             # Forward step
             loss = self.loss_fn(x, target, base, base_label)
             loss.backward()
@@ -497,7 +505,7 @@ class CounterFactualCrafting:
         :beta: float, regularization parameter
         :training_callback: callable, a function to call at the end of each epoch for custom training logic
         """
-        
+        print(f"DEBUG gen.py generate_local_counterfactuals: {target.shape}, {base.shape}, {base_label}, {binary_mask.shape}")
         assert isinstance(binary_mask, torch.Tensor), "binary_mask must be a torch.Tensor"
         assert 1 in binary_mask.unique(), "binary_mask must contain at least one 1"
         assert 0 in binary_mask.unique(), "binary_mask must contain at least one 0"
@@ -560,7 +568,7 @@ class CounterFactualCrafting:
         
         if debug:
             print("Counterfactual generation complete.")
-
+        print(f"DEBUG gen.py generate_local_counterfactuals: Final counterfactual shape: {x.shape}, head: {x[:10]}")
         return x
 
 class LocalCounterFactualCrafting:

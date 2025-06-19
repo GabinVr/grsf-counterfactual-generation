@@ -13,3 +13,27 @@ def getDatasetNames():
                                                                         "FiftyWords"]]
 def getDataset(dataset_name:str):
     return wildboar.datasets.load_dataset(dataset_name)
+
+
+def getDistanceMetrics():
+    """
+    Get the list of distance metrics available in wildboar.datasets.
+    """
+    return ["euclidean",
+                    "normalized_euclidean",
+                    "adtw",
+                    "dtw",
+                    "ddtw",
+                    "wdtw",
+                    "wddtw",
+                    "lcss",
+                    "wlcss",
+                    "erp",
+                    "edr",
+                    "msm",
+                    "twe",
+                    "manhattan",
+                    "minkowski",
+                    "chebyshev",
+                    "cosine",
+                    "angular"]

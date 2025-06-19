@@ -8,3 +8,4 @@ torch==2.6.0
 watchdog==6.0.0
 pyts==0.13.0
 streamlit_code_editor==0.1.22
+streamlit_plotly_events==0.0.6

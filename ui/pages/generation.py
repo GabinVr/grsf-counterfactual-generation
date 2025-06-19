@@ -1,232 +1,407 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
-import streamlit as st
-import numpy as np
-import torch
-import plotly.graph_objects as go
 import plotly.express as px
-from plotly.subplots import make_subplots
-from typing import Optional
-from utils import getDatasetNames, getDataset
-from components.model_config import grsfConfig, dnnConfig, dnnUtils
-from components.couterfactuals_config import CounterfactualsConfig, CounterfactualsAnalysisComponent
-from code_editor import code_editor
+import plotly.graph_objects as go
+import numpy as np
+from utils import getDatasetNames, getDataset, getDistanceMetrics
+from components.model_config import dnnConfig, dnnUtils
+from model.dataset import DatasetObject
+from model.grsf_model import GRSFModelObject    
+from model.surrogate_model import SurrogateModelObject
+from model.generation import LocalCounterfactualGeneratorObject
+from components.graph import render_graph
+import random
+import pandas as pd
 
-## Page with 4 tabs: 
-# - Dataset selection
-#     - Same as dataset page
-# - Configuration & training of grsf model
-#     - Simply expose the model configuration options with explanations
-#     - training is done in the background when the user clicks "train"
-#     - Display a progress bar or spinner during training
-#     - Display the accuracy of the model after training
-# - Choice of generation models and parameters
-#     - Expose the generation parameters with explanations
-#     - Display a button to launch the generation
-#     - Display a progress bar or spinner during generation
-# - Results display and analysis
-#     - Display the generated counterfactuals with base and target classes/data
-
-class GenerationPage:    
+class GenerationPage:
     def __init__(self):
-        """Initialise la page de génération."""
-        pass
+        self._configure_page()
+        self._initialize_session_state()
+        self._generationStateManager = None
+
+    def _configure_page(self) -> None:
+        st.set_page_config(
+            page_title="Counterfactual Generation - GRSF",
+            page_icon="🤖",
+            layout="wide",
+            initial_sidebar_state="collapsed"
+        )
+    def _initialize_session_state(self) -> None:
+        if "dataset" not in st.session_state:
+            st.session_state.dataset = DatasetObject()
+        if "grsf_model" not in st.session_state:
+            st.session_state.grsf_model = GRSFModelObject()
+        if "surrogate_model" not in st.session_state:
+            st.session_state.surrogate_model = SurrogateModelObject()
+        if "generation_parameters" not in st.session_state:
+            st.session_state.generation_parameters = {}
 
     def render(self):
+        dataset_tab, grsf_tab, surrogate_tab, local_tab, batch_tab = st.tabs([
+            "Dataset",
+            "GRSF",
+            "Surrogate",
+            "Local",
+            "Batch"
+        ])
+        with dataset_tab:
+            self._render_dataset_tab()
+            if st.button("Rerun"):
+                st.rerun()
+        with grsf_tab:
+            self._render_grsf_tab()
+        with surrogate_tab:
+            self._render_surrogate_tab()
+        with local_tab:
+            self._render_local_tab()
+        with batch_tab:
+            self._render_batch_tab()
 
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "📁 Dataset selection",
-            "⚙️ GRSF Model Configuration",
-            "🎯 Generation Parameters",
-            "📊 Results Display and Analysis"])
+    def _render_dataset_tab(self):
+        st.markdown("### 📁 Dataset selection")
         
-        with tab1:
-            # Title and description of the tab
-            st.markdown("### 📁 Dataset selection")
+        datasets_names = getDatasetNames()
+        selected_dataset = st.selectbox(
+            "Select dataset",
+            datasets_names,
+            help="Choose a dataset for counterfactual generation",
+            index=6,
+        )
 
-            datasets = getDatasetNames()
-            selected_dataset = st.selectbox(
-                "Sélectionner un dataset",
-                datasets,
-                help="Choose a dataset for counterfactual generation",
-            )
-            if selected_dataset:
-                with st.spinner("Data loading..."):
-                    dataset = getDataset(selected_dataset)
-                    st.session_state['uploaded_data'] = dataset
-                    st.session_state['dataset_name'] = selected_dataset
-                    st.success(f"Dataset '{selected_dataset}' loaded successfully!")
-                    # Store important information about the dataset in session state
-                    st.session_state['sample_size'] = dataset[0].shape[1] # Length of the time series
-                    st.session_state['num_classes'] = len(np.unique(dataset[1])) # Number of classes
-                    st.divider()
-                    st.markdown("Important information about the dataset:")
-                    st.write(f"Sample size: {st.session_state['sample_size']}")
-                    st.write(f"Number of classes: {st.session_state['num_classes']}")
+        
+        if selected_dataset:
+            # State management
+            if st.session_state.dataset.has_changed(selected_dataset):
+                st.session_state.dataset.set_dataset(selected_dataset)
+                st.session_state.grsf_model.clear()
+                st.session_state.surrogate_model.clear()
+            
+            st.session_state.dataset.load_dataset()
+            st.divider()
+            st.markdown(str(st.session_state.dataset))
 
-        with tab2:
-            # Only show this tab if data is uploaded
-            if 'uploaded_data' not in st.session_state:
-                st.warning("Please upload a dataset first in the previous tab.")
+
+    def _render_grsf_tab(self):
+        st.markdown("### 🤖 GRSF model configuration")
+        if st.session_state.dataset.is_empty():
+            st.warning("Please select a dataset first.")
+            return
+        
+        n_shapelets = st.number_input(
+            "Number of shapelets",
+            min_value=1,
+            max_value=10000,
+            value=500,
+            step=1
+        )
+        
+        metric = st.selectbox(
+            "Distance metric",
+            options=getDistanceMetrics(),
+            index=0
+        )
+        
+        min_shapelet_size = st.number_input(
+            "Minimum shapelet size",
+            min_value=0.0,
+            max_value=50.0,
+            value=0.0,
+            step=0.1
+        )
+        
+        max_shapelet_size = st.number_input(
+            "Maximum shapelet size",
+            min_value=0.0,
+            max_value=90.0,
+            value=1.0,
+            step=0.1
+        )
+        if min_shapelet_size >= max_shapelet_size or min_shapelet_size < 0 or max_shapelet_size <= 0:
+            st.error("Minimum shapelet size must be less than maximum shapelet size.")
+            return
+        
+        # alpha values : triplet like (0.1, 1.0, 10.0)
+        alphas=(0.1, 1.0, 10.0)
+
+        parameters = {
+            "n_shapelets": n_shapelets,
+            "metric": metric,
+            "min_shapelet_size": min_shapelet_size,
+            "max_shapelet_size": max_shapelet_size,
+            "alphas": alphas
+        }
+
+
+        if st.button("Train GRSF model"):
+            if st.session_state.grsf_model.is_empty() or st.session_state.grsf_model.has_changed(parameters):
+                st.session_state.grsf_model.set_parameters(parameters)
+                st.session_state.surrogate_model.clear()
+            
+            st.session_state.grsf_model.set_dataset(st.session_state.dataset.get_dataset(), 
+                                                    st.session_state.dataset.get_dataset_name())
+            st.session_state.grsf_model.train()
+
+        st.divider()
+        st.markdown(str(st.session_state.grsf_model))
+        # Save the grsf model in the session state
+
+    def _render_surrogate_tab(self):
+        st.markdown("### 🧠 Surrogate model configuration")
+        if st.session_state.grsf_model.is_empty():
+            st.warning("Please train a GRSF model first.")
+            return
+        
+        surrogate_arch = st.selectbox(
+            "Surrogate model architecture",
+            options=dnnUtils.get_available_models().keys(),
+            index=0
+        )
+        
+        dnn_model = dnnUtils.get_available_models()[surrogate_arch]
+        sample_size, num_classes = st.session_state.dataset.get_sample_size(), st.session_state.dataset.get_num_classes()
+        available_params = dnn_model.get_params(sample_size=sample_size, num_classes=num_classes)
+
+        parameters = self._render_model_parameters_sel(available_params)
+        
+        if st.button("Train Surrogate model"):
+            if st.session_state.surrogate_model.is_empty() or st.session_state.surrogate_model.has_changed(parameters):
+                st.session_state.surrogate_model.set_parameters(parameters)
+            
+            st.session_state.surrogate_model.set_grsf_model(st.session_state.grsf_model.get_model())
+            st.session_state.surrogate_model.set_model(dnn_model)
+            st.session_state.surrogate_model.set_split_dataset(st.session_state.grsf_model.get_split_dataset())
+                                                     
+            st.session_state.surrogate_model.train()
+
+        st.divider()
+        st.markdown(str(st.session_state.surrogate_model)) # Prints accuracy and training trace
+
+    def _render_model_parameters_sel(self, available_params):
+        parameters = {}
+        
+        for param_name, param_info in available_params.items():
+            if param_info["type"] == "int":
+                value = st.number_input(
+                    param_info["description"],
+                    min_value=param_info.get("min", 0),
+                    max_value=param_info.get("max", 10000),
+                    value=param_info["default"],
+                    step=1,
+                    key=param_name
+                )
+            elif param_info["type"] == "float":
+                value = st.number_input(
+                    param_info["description"],
+                    min_value=param_info.get("min", 0.0),
+                    max_value=param_info.get("max", 1.0),
+                    value=param_info["default"],
+                    step=0.01,
+                    key=param_name
+                )
+            elif param_info["type"] == "str":
+                value = st.text_input(
+                    param_info["description"],
+                    value=param_info["default"],
+                    key=param_name
+                )
             else:
-                # Display model configuration options
-                model_config = grsfConfig()
-                st.session_state['model_config'] = model_config.render()
-                # Display the button to train the model
-                st.divider()
-                column_train, column_save, column_load = st.columns([2, 1, 1])
-                with column_train:    
-                    if st.button("🚀 Train GRSF Model", type="primary", use_container_width=True):
-                        with st.spinner("Training GRSF model..."):
-                            st.session_state['trained_grsf_model'], st.session_state['split_dataset'] = model_config.train_model(st.session_state['dataset_name'])
-                        if 'trained_grsf_model' in st.session_state and st.session_state['trained_grsf_model'] != 1:
-                            st.success("GRSF model trained successfully!")
-                        else:
-                            st.error("Failed to train GRSF model. Please check the configuration and dataset.")
-                with column_save:
-                    model_config.save_config()
-                with column_load:
-                    if st.button("📥 Load Model Configuration", type="secondary", use_container_width=True):
-                        if 'model_config' in st.session_state:
-                            st.session_state['model_config'].load_config()
-                            st.success("Model configuration loaded successfully!")
-                        else:
-                            st.error("No model configuration found to load.")
-                st.divider()
-                if 'trained_grsf_model' in st.session_state:
-                    st.markdown("#### 🚀 GRSF Model Accuracy")  
-                    st.write(f"Accuracy: {model_config.evaluate_model(st.session_state['trained_grsf_model'], st.session_state['split_dataset']) * 100:.2f}%")
+                st.error(f"Unsupported parameter type: {param_info['type']}")
+                continue
+            parameters[param_name] = value
+        return parameters
+
+    def _render_local_tab(self):
+        st.markdown("### 🏠 Local counterfactual generation")
+        if st.session_state.surrogate_model.is_empty():
+            st.warning("Please train a surrogate model first.")
+            return
+        
+        # Initialize local counterfactual generator if not exists
+        if "local_generator" not in st.session_state:
+            st.session_state.local_generator = LocalCounterfactualGeneratorObject()
+        st.session_state.local_generator.set_models(st.session_state.grsf_model.get_model(),
+                                                    st.session_state.surrogate_model.get_model())
+                                                    
+        
+        st.divider()
+        st.markdown("#### Local generation parameters")
+        epochs = st.number_input(
+            "Number of epochs",
+            min_value=1,
+            max_value=1000,
+            value=100,
+            step=1,
+            key="local_epochs"
+        )
+        learning_rate = st.text_input(
+            "Learning rate",
+            value="0.001",
+            key="local_learning_rate"
+        )
+        if not learning_rate.replace(".", "").isnumeric():
+            st.error("Learning rate must be a numeric value.")
+            return
+        learning_rate = float(learning_rate)
+
+        beta = st.text_input(
+            "Beta (regularization parameter)",
+            value="0.1",
+            key="local_beta"
+        )
+        if not beta.replace(".", "").isnumeric():
+            st.error("Beta must be a numeric value between 0 and 1.")
+            return
+        beta = float(beta)
+        if beta < 0 or beta > 1:
+            st.error("Beta must be between 0 and 1.")
+            return
+
+        parameters = {
+            "epochs": epochs,
+            "learning_rate": learning_rate,
+            "beta": beta
+        }
+        st.session_state.local_generator.set_parameters(parameters)
+
+        st.divider()
+        st.markdown("#### Select instance for counterfactual generation")
+        self._render_sample_selection()
+        self._render_visual_selection()
+
+        st.divider()
+        st.markdown("#### Generate counterfactual")
+        
+        # Check if samples are selected
+        
+        if st.button("Generate Counterfactual"):
+            if st.session_state.local_generator.has_changed(parameters):
+                st.session_state.local_generator.set_parameters(parameters)   
+            
+            # Generate counterfactual
+            with st.spinner("Generating counterfactual..."):
                 
-        with tab3:
-            with st.expander("### 🎯 Generation parameters"):
-                st.markdown("### 🎯 Generation parameters")
-                st.markdown("Here you can choose the parameters, the model architecture, the loss function...")
-                if 'trained_grsf_model' not in st.session_state:
-                    st.warning("Please train the GRSF model first in the previous tab.")
+                ret = st.session_state.local_generator.generate()
+                if ret:
+                    st.success("✅ Counterfactual generated successfully!")
                 else:
-
-                    st.divider()
-                    st.markdown("## 🛜 model selection")
-                    # let the user choose the model architecture and save it in the session state
-                    selected_model = st.selectbox(
-                        "Select a surrogate model",
-                        dnnUtils.get_available_models().keys(),
-                        help="Choose the surrogate model architecture for counterfactual generation"
-                    )
-                    # Save the selected model in the session state
-                    st.session_state['selected_model'] = selected_model
-
-                    # with st.expander("## 🛠 write your own ?"):
-                    #     # Display the template for custom model (code in the file `template_custom_model.txt`)
-                    #     st.markdown("You can fill in the code below to implement your own model architecture.")
-                    #     try:
-                    #         with open("ui/templates/template_custom_model.txt", "r") as file:
-                    #             template_code = file.read()
-                    #     except FileNotFoundError:
-                    #         st.info("Template file not found. Please ensure the file exists in the correct path.")
-                    #         template_code = ""
-                    #     response_button = [{"name": "Finish"}]
-                    #     response_dict = code_editor(template_code, buttons=response_button)
-                    #     st.info(f"Custom model code updated: {response_dict}")
-                    #     st.divider()
-                    st.divider()
-                    st.markdown("## ✨ Model parameters")
-                    # Todo - Add method in every model to give parameters needed
-                    dnn_model = dnnUtils.get_available_models()[st.session_state['selected_model']]
-                    dnn_model_conf = dnnConfig(dnn_model)
-                    dnn_model_conf.set_params(
-                        sample_size=st.session_state['sample_size'],
-                        num_classes=st.session_state['num_classes']
-                    )
-                    dnn_model_conf.render()
-                    st.divider()
-                    st.markdown("### Training parameters")
-                    # epochs 
-                    epochs = st.number_input(
-                        "Number of epochs",
-                        min_value=1,
-                        max_value=1000,
-                        value=100,
-                        help="Number of epochs for training the surrogate model"
-                    )
-                    st.session_state['epochs'] = epochs
-                    # learning rate
-                    learning_rate = st.number_input(
-                        "Learning rate",
-                        min_value=0.0001,
-                        max_value=0.1,
-                        value=0.001,
-                        step=0.0001,
-                        help="Learning rate for training the surrogate model"
-                    )
+                    st.warning("⚠️ No counterfactual generated. Check the parameters or samples.")
+        st.divider()
+        st.markdown(str(st.session_state.local_generator))
+        if st.session_state.local_generator.has_counterfactual():
+            st.markdown("#### Counterfactual Visualization")
+            base_sample = st.session_state.local_generator.get_base_sample()
+            target_sample = st.session_state.local_generator.get_target_sample()
+            counterfactual = st.session_state.local_generator.get_counterfactual()
             
-            if 'trained_grsf_model' in st.session_state and st.session_state['trained_grsf_model'] is not None:
-                # Add a button to launch the training of the model
-                if st.button("🚀 Train Surrogate Model", type="primary", use_container_width=True):
-                    with st.spinner("Training surrogate model..."):
-                        try:
-                            st.session_state['trained_surrogate_model'] = dnn_model_conf.train_model(st.session_state['split_dataset'], epochs=epochs, learning_rate=learning_rate)
-                            st.success("Surrogate model trained successfully!")
-                            accuracy = dnn_model_conf.evaluate_model(st.session_state['trained_surrogate_model'], st.session_state['split_dataset'])
-                            st.markdown(f"#### 🚀 Surrogate Model Accuracy: {accuracy * 100:.2f}%")
-                        except Exception as e:
-                            st.error(f"Failed to train surrogate model: {str(e)}")
-                            st.session_state['trained_surrogate_model'] = None
-                if 'trained_surrogate_model' in st.session_state and st.session_state['trained_surrogate_model'] is not None:
-                    # Initialize counterfactuals config if not exists
-                    if 'counterfactuals_config' not in st.session_state:
-                        counterfactuals_config = CounterfactualsConfig(
-                            grsf_model=st.session_state['trained_grsf_model'],
-                            surrogate_model=st.session_state['trained_surrogate_model'],
-                            split_dataset=st.session_state['split_dataset']
-                        )
-                        st.session_state['counterfactuals_config'] = counterfactuals_config
-                    else:
-                        counterfactuals_config = st.session_state['counterfactuals_config']
+            if base_sample is not None and target_sample is not None and counterfactual is not None:
+                combined_df = pd.DataFrame({
+                    "time": list(range(len(base_sample))) + list(range(len(target_sample))) + list(range(len(counterfactual))),
+                    "value": list(base_sample) + list(target_sample) + list(counterfactual),
+                    "series_type": ["Base Sample"] * len(base_sample) + ["Target Sample"] * len(target_sample) + ["Counterfactual"] * len(counterfactual),
+                    "class": [st.session_state.local_generator.get_base_class()] * len(base_sample) + [st.session_state.local_generator.get_target_class()] * len(target_sample) + [st.session_state.local_generator.get_target_class()] * len(counterfactual),
+                })
+                labels = {
+                    "time": "Time",
+                    "value": "Value",
+                    "series_type": "Series Type",
+                    "class": "Class"
+                }
+                render_graph(combined_df, labels, title="Counterfactual Generation Visualization")
 
-            with st.expander("### 🎯 Generate Counterfactuals"):
-                # Render counterfactuals generation UI
-                if 'counterfactuals_config' not in st.session_state:
-                    st.info("Initializing counterfactuals configuration...")
+    def _render_sample_selection(self):
+        """
+        Render the sample selection UI for local counterfactuals generation.
+        """        
+        _, _, X_test, y_test = st.session_state.grsf_model.get_split_dataset()
+        
+        if len(X_test) == 0:
+            st.warning("⚠️ No test samples available for local counterfactuals generation.")
+            return
+        
+        selected_idx = st.selectbox(
+            "Select a base sample from the test set:",
+            range(len(X_test)),
+            format_func=lambda x: f"Sample {x + 1} (Class {y_test[x]})",
+            key="local_sample_selection"
+        )
+
+        # let the user choose a target sample/class
+        if selected_idx is not None:
+            st.session_state.local_generator.set_base_sample(X_test[selected_idx], y_test[selected_idx])
+            st.markdown("#### Select a target sample")
+            rand_select = st.toggle("🎲 Randomly select a target sample", key="random_target_sample_toggle", value=True)
+        
+            if rand_select:
+                if not st.session_state.local_generator.has_target_sample():
+                    st.session_state.local_generator.select_random_target((None, None, X_test, y_test))
+            else:
+                different_class_indices = {i: i for i, label in enumerate(y_test) if label != y_test[selected_idx]}
+                
+                if different_class_indices:
+                    target_idx = st.selectbox(
+                        "Manual selection of target sample:",
+                        list(different_class_indices.keys()),
+                        format_func=lambda x: f"Sample {x + 1} (Class {y_test[x]})",
+                        key="target_sample_selection"
+                    )
+                    
+                    if target_idx is not None:
+                        target_sample = X_test[target_idx]
+                        target_class = y_test[target_idx]
+                        
+                        st.session_state.local_generator.set_target_sample(target_sample, target_class)
                 else:
-                    counterfactuals_config = st.session_state['counterfactuals_config']
-                    global_cf, local_cf = st.tabs(["🌍 Global", "📍 Local"])
-                    with global_cf:
-                        counterfactuals_config._render_global_counterfactuals()
-                    with local_cf:
-                        counterfactuals_config._render_local_counterfactuals()
+                    st.error("No samples from different classes available.")
+    
+    def _render_visual_selection(self) -> None:
+        base_sample_np = st.session_state.local_generator.get_base_sample()
+        target_sample_np = st.session_state.local_generator.get_target_sample()
+        if base_sample_np is None or target_sample_np is None:
+            st.warning("Please select a base and target sample first.")
+            return
+        combined_df = pd.DataFrame({
+            "time": list(range(len(base_sample_np))) + list(range(len(target_sample_np))),
+            "value": list(base_sample_np) + list(target_sample_np),
+            "series_type": ["Base Sample"] * len(base_sample_np) + ["Target Sample"] * len(target_sample_np),
+            "class": [st.session_state.local_generator.get_base_class()] * len(base_sample_np) + [st.session_state.local_generator.get_target_class()] * len(target_sample_np),
+        })
+        fig = px.scatter(combined_df, x="time", y="value", 
+                         color="series_type",
+                         title="Time Series Sample - Select points by dragging",
+                         labels={"time": "Time", "value": "Value", "class": "Class"},
+                         template="plotly_white")
+        fig.update_layout(selectdirection='h',
+                          dragmode='select')
+        fig.update_traces(mode='lines+markers',
+                          marker=dict(size=5, opacity=0.7),
+                          line=dict(width=1.5))
+        event = st.plotly_chart(fig, 
+                                key="time_series_plot", 
+                                on_select="rerun")
 
-        with tab4:
+        idx_selected = event['selection']['point_indices']
+        binary_mask = np.zeros(len(base_sample_np), dtype=int)
+        if idx_selected is not None and len(idx_selected) > 0:
+            for idx in idx_selected:
+                # Only consider indices that correspond to the original sample (not target)
+                if 0 <= idx < len(base_sample_np):
+                    binary_mask[idx] = 1
+        else:
+            st.info("Click on the box select tool and drag to select points")
+        st.session_state.local_generator.set_binary_mask(binary_mask)
 
-            # Get data from session state
-            counterfactuals = st.session_state.get('counterfactuals_list', None)
-            grsf_model = st.session_state.get('trained_grsf_model', None)
-            
-            # Create analysis component and pass data directly
-            analysis_component = CounterfactualsAnalysisComponent(
-                counterfactuals_config=st.session_state.get('counterfactuals_config', None)
-            )
-            
-            # Pass the data directly to render method
-            analysis_component.render(
-                counterfactuals=counterfactuals,
-                grsf_classifier=grsf_model
-            )
-
+    def _render_batch_tab(self):
+        st.markdown("### 📦 Batch counterfactual generation")
+        if st.session_state.surrogate_model.is_empty():
+            st.warning("Please train a surrogate model first.")
+            return
+        
+        # Initialize batch generator if not exists
+        if "batch_generator" not in st.session_state:
+            st.session_state.batch_generator = GblobalCounterfactualGeneratorObject()
 def main():
-    """Point d'entrée principal de l'application."""
-    st.set_page_config(
-        page_title="GRSF Counterfactual Generation",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
+    page = GenerationPage()
+    page.render()
     
-    # Initialisation de la page de génération
-    generation_page = GenerationPage()
-    
-    # Affichage de la page
-    generation_page.render()
 
 if __name__ == "__main__":
     main()

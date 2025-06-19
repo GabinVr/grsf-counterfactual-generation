@@ -162,12 +162,12 @@ class dnnConfig:
         Returns:
             gen.BaseSurrogateClassifier: Trained DNN model
         """
+        st.info("Printing training trace in the code editor below. You can copy it to your local machine for further analysis.")
         try:
             X_train, y_train, _, _ = split_dataset
             st.session_state["surrogate_training_progress"] = ""
             out =  self.model.train(X_train, y_train, epochs=epochs, lr=learning_rate, 
                                     training_callback=self._training_callback, debug=True)
-            self._render_training_trace()
             return out
         except Exception as e:
             st.error(f"Error training DNN model: {str(e)}")
@@ -182,7 +182,6 @@ class dnnConfig:
             code_editor(st.session_state["surrogate_training_progress"], 
                         height=7,
                         focus=False)
-        st.session_state["surrogate_training_progress"] = ""
         return
 
 
