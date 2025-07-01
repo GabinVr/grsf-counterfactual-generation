@@ -85,6 +85,15 @@ class GRSFModelObject:
         if self._model is None:
             raise ValueError("Model training failed. Please check the parameters and dataset.")
 
+    def get_info(self) -> dict:
+        if self._model is None:
+            raise ValueError("Model not trained yet. Please train the model first.")
+        return {
+            "dataset_name": self._dataset_name,
+            "parameters": self._parameters,
+            "accuracy": self._accuracy,
+        }
+
     def __str__(self):
         if self._is_trained:
             return f"GRSF Model: {self._dataset_name}, Parameters: {self._parameters}, Accuracy: {self._accuracy:.2f} \n "

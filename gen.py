@@ -23,7 +23,7 @@ from torch.nn import Linear, Module, ReLU, Sequential
 from wildboar.datasets import load_synthetic_control
 from wildboar.linear_model import RandomShapeletClassifier
 from pyts.approximation import PiecewiseAggregateApproximation as PAA
-
+from abc import ABC, abstractmethod
 ##### UTILS #####
 
 def getDatasetNames():
@@ -397,6 +397,98 @@ class SimpleSurogateClassifier(BaseSurrogateClassifier):
         x = self.fc2(x)
         return x
 
+class BaseLossFunction(ABC):
+    """
+    Base class for loss functions used in counterfactual crafting.
+    This class should be extended to implement specific loss functions.
+    """
+    def __init__(self, **kwargs):
+        self._params = kwargs
+        self._validate_params()
+    
+    @abstractmethod
+    def _validate_params(self):
+        """
+        Validate the parameters passed to the loss function.
+        """
+        pass
+
+    @abstractmethod
+    def compute_loss(self, x, target, base, base_label):
+        """
+        Compute the loss for the counterfactual crafting.
+        """
+        pass
+
+    def get_params(self):
+        return self._params
+    
+    def set_params(self, **params):
+        self._params.update(params)
+        self._validate_params()
+        return self
+
+class L2LossFunction(BaseLossFunction):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+    
+    def _validate_params(self):
+        self._params.setdefault('norm_order', 2)  
+        self._params.setdefault('beta', 0.5)
+    
+    def compute_loss(self, x, target, base, base_label, surrogate_classifier:BaseSurrogateClassifier):
+        norm_order = self._params['norm_order']
+        beta = self._params['beta']
+        return torch.norm(surrogate_classifier(x) - surrogate_classifier(target), p=norm_order).pow(2)
+
+class LossFunctionFactory:
+    _registry = {
+        'l2': L2LossFunction,
+    }
+
+    @classmethod
+    def create(cls, loss_type:str, **params) -> BaseLossFunction:
+        if loss_type not in cls._registry:
+            raise ValueError(f"Loss type '{loss_type}' is not registered.")
+        return cls._registry[loss_type](**params)
+    
+    @classmethod
+    def register(cls, loss_type:str, loss_class:BaseLossFunction):
+        cls._registry[loss_type] = loss_class  
+    
+    @classmethod
+    def list_available(cls) -> list:
+        return list(cls._registry.keys())
+class LossBuilder:
+    def __init__(self):
+        self.reset()
+    
+    def reset(self):
+        self._config = {}
+        return self
+
+    def set_loss_type(self, loss_type:str):
+        self._config['loss_type'] = loss_type
+        return self
+
+    def set_param(self, key:str, value):
+        if 'params' not in self._config:
+            self._config['params'] = {}
+        self._config[key] = value
+        return self
+
+    def set_params(self, **params):
+        if 'params' not in self._config:
+            self._config['params'] = {}
+        self._config['params'].update(params)
+        return self
+    
+    def build(self) -> BaseLossFunction:
+        if 'loss_type' not in self._config:
+            raise ValueError("Loss type must be set before building the loss function")
+        params = self._config.get('params', {})
+        return LossFunctionFactory.create(self._config['loss_type'], **params)
+    
 class CounterFactualCrafting:
     """
     Class for crafting counterfactuals for the GRSF algorithm using a surrogate classifier.

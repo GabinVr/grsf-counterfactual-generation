@@ -83,6 +83,17 @@ class DatasetObject:
             return self._num_classes
         raise ValueError("Dataset not loaded. Please load a dataset first.")
 
+    def get_dataset_info(self) -> dict:
+        if self._is_empty:
+            raise ValueError("Dataset is empty. Please load a dataset first.")
+        
+        return {
+            "dataset_name": self._dataset_name,
+            "num_samples": self._raw_data[0].shape[0],
+            "sample_size": self._sample_size,
+            "num_classes": self._num_classes
+        }
+
     def __str__(self) -> str:
         if self._is_empty:
             return "DatasetObject is empty."

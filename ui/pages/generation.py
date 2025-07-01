@@ -7,10 +7,13 @@ from components.model_config import dnnConfig, dnnUtils
 from model.dataset import DatasetObject
 from model.grsf_model import GRSFModelObject    
 from model.surrogate_model import SurrogateModelObject
-from model.generation import LocalCounterfactualGeneratorObject
+from model.generation import LocalCounterfactualGeneratorObject, GlobalCounterfactualGeneratorObject
+from model.experimentLogger import ExperimentLogger
 from components.graph import render_graph
 import random
 import pandas as pd
+
+
 
 class GenerationPage:
     def __init__(self):
@@ -34,6 +37,8 @@ class GenerationPage:
             st.session_state.surrogate_model = SurrogateModelObject()
         if "generation_parameters" not in st.session_state:
             st.session_state.generation_parameters = {}
+        if "experiment_logger" not in st.session_state:
+            st.session_state.experiment_logger = ExperimentLogger()
 
     def render(self):
         dataset_tab, grsf_tab, surrogate_tab, local_tab, batch_tab = st.tabs([
@@ -78,7 +83,7 @@ class GenerationPage:
             st.session_state.dataset.load_dataset()
             st.divider()
             st.markdown(str(st.session_state.dataset))
-
+            st.session_state.experiment_logger.set_dataset(st.session_state.dataset.get_dataset_info())
 
     def _render_grsf_tab(self):
         st.markdown("### 🤖 GRSF model configuration")
@@ -139,7 +144,6 @@ class GenerationPage:
             st.session_state.grsf_model.set_dataset(st.session_state.dataset.get_dataset(), 
                                                     st.session_state.dataset.get_dataset_name())
             st.session_state.grsf_model.train()
-
         st.divider()
         st.markdown(str(st.session_state.grsf_model))
         # Save the grsf model in the session state
@@ -149,6 +153,8 @@ class GenerationPage:
         if st.session_state.grsf_model.is_empty():
             st.warning("Please train a GRSF model first.")
             return
+
+        st.session_state.experiment_logger.set_grsf_model(st.session_state.grsf_model.get_info())
         
         surrogate_arch = st.selectbox(
             "Surrogate model architecture",
@@ -161,11 +167,15 @@ class GenerationPage:
         available_params = dnn_model.get_params(sample_size=sample_size, num_classes=num_classes)
 
         parameters = self._render_model_parameters_sel(available_params)
+
+        with st.expander("Surrogate model training parameters", expanded=False):
+            training_parameters = self._render_surrogate_model_training_parameters()
         
         if st.button("Train Surrogate model"):
             if st.session_state.surrogate_model.is_empty() or st.session_state.surrogate_model.has_changed(parameters):
                 st.session_state.surrogate_model.set_parameters(parameters)
-            
+            st.session_state.surrogate_model.set_training_parameters(training_parameters["epochs"], 
+                                                                    training_parameters["learning_rate"])  
             st.session_state.surrogate_model.set_grsf_model(st.session_state.grsf_model.get_model())
             st.session_state.surrogate_model.set_model(dnn_model)
             st.session_state.surrogate_model.set_split_dataset(st.session_state.grsf_model.get_split_dataset())
@@ -208,6 +218,34 @@ class GenerationPage:
                 continue
             parameters[param_name] = value
         return parameters
+    
+    def _render_surrogate_model_training_parameters(self):
+        parameters = {}
+        st.divider()
+        st.markdown("#### Training parameters")
+        epochs = st.number_input(
+            "Number of epochs",
+            min_value=1,
+            max_value=1000,
+            value=100,
+            step=1,
+            key="surrogate_epochs"
+        )
+        learning_rate = st.text_input(
+            "Learning rate",
+            value="0.001",
+            key="surrogate_learning_rate"
+        )
+        if not learning_rate.replace(".", "").isnumeric():
+            st.error("Learning rate must be a numeric value.")
+            return
+        learning_rate = float(learning_rate)
+        if learning_rate <= 0 or learning_rate > 1:
+            st.error("Learning rate must be between 0 and 1.")
+            return
+        parameters["epochs"] = epochs
+        parameters["learning_rate"] = learning_rate
+        return parameters
 
     def _render_local_tab(self):
         st.markdown("### 🏠 Local counterfactual generation")
@@ -215,13 +253,14 @@ class GenerationPage:
             st.warning("Please train a surrogate model first.")
             return
         
+        st.session_state.experiment_logger.set_surrogate_model(st.session_state.surrogate_model.get_info())
+        
         # Initialize local counterfactual generator if not exists
         if "local_generator" not in st.session_state:
             st.session_state.local_generator = LocalCounterfactualGeneratorObject()
         st.session_state.local_generator.set_models(st.session_state.grsf_model.get_model(),
                                                     st.session_state.surrogate_model.get_model())
                                                     
-        
         st.divider()
         st.markdown("#### Local generation parameters")
         epochs = st.number_input(
@@ -282,6 +321,7 @@ class GenerationPage:
                 ret = st.session_state.local_generator.generate()
                 if ret:
                     st.success("✅ Counterfactual generated successfully!")
+                    st.session_state.experiment_logger.set_local_generator(st.session_state.local_generator.get_info())
                 else:
                     st.warning("⚠️ No counterfactual generated. Check the parameters or samples.")
         st.divider()
@@ -306,6 +346,16 @@ class GenerationPage:
                     "class": "Class"
                 }
                 render_graph(combined_df, labels, title="Counterfactual Generation Visualization")
+        
+        st.markdown("#### 💾 Save results and logs")
+        experiment_name = st.text_input(
+            "Experiment Name",
+            placeholder="Enter a name for the local experiment",
+            key="local_experiment_name"
+        )
+        if st.button("Save Local Experiment"):
+            st.session_state.experiment_logger.set_batch_generator(None)  
+            st.session_state.experiment_logger.save_experiment(experiment_name)
 
     def _render_sample_selection(self):
         """
@@ -395,9 +445,126 @@ class GenerationPage:
             st.warning("Please train a surrogate model first.")
             return
         
+        st.session_state.experiment_logger.set_surrogate_model(st.session_state.surrogate_model.get_info())
+        
         # Initialize batch generator if not exists
         if "batch_generator" not in st.session_state:
-            st.session_state.batch_generator = GblobalCounterfactualGeneratorObject()
+            st.session_state.batch_generator = GlobalCounterfactualGeneratorObject()
+        
+        # Set models and dataset for the batch generator
+        st.session_state.batch_generator.set_models(
+            st.session_state.grsf_model.get_model(),
+            st.session_state.surrogate_model.get_model()
+        )
+        st.session_state.batch_generator.set_split_dataset(
+            st.session_state.grsf_model.get_split_dataset()
+        )
+        
+        st.divider()
+        st.markdown("#### Batch generation parameters")
+        
+        # Number of samples
+        nb_samples = st.number_input(
+            "Number of counterfactuals to generate",
+            min_value=1,
+            max_value=1000,
+            value=10,
+            step=1,
+            key="batch_nb_samples"
+        )
+        
+        # Generation parameters
+        epochs = st.number_input(
+            "Number of epochs",
+            min_value=1,
+            max_value=1000,
+            value=100,
+            step=1,
+            key="batch_epochs"
+        )
+        
+        learning_rate = st.text_input(
+            "Learning rate",
+            value="0.001",
+            key="batch_learning_rate"
+        )
+        
+        if not learning_rate.replace(".", "").isnumeric():
+            st.error("Learning rate must be a number.")
+            return
+        
+        learning_rate = float(learning_rate)
+        if learning_rate <= 0 or learning_rate > 1:
+            st.error("Learning rate must be between 0 and 1.")
+            return
+        
+        beta = st.text_input(
+            "Beta parameter",
+            value="0.5",
+            key="batch_beta"
+        )
+        
+        if not beta.replace(".", "").isnumeric():
+            st.error("Beta parameter must be a number.")
+            return
+        
+        beta = float(beta)
+        if beta < 0 or beta > 1:
+            st.error("Beta parameter must be between 0 and 1.")
+            return
+        
+        parameters = {
+            "epochs": epochs,
+            "learning_rate": learning_rate,
+            "beta": beta
+        }
+        
+        # Check if parameters have changed
+        if st.session_state.batch_generator.has_changed(parameters):
+            st.session_state.batch_generator.set_parameters(parameters, nb_samples)
+        
+        st.divider()
+        st.markdown("#### Generate batch counterfactuals")
+        
+        if st.button("Generate Batch Counterfactuals", key="batch_generate_btn"):
+            with st.spinner("Generating batch counterfactuals..."):
+                ret = st.session_state.batch_generator.generate()
+                if ret:
+                    st.success("✅ Batch counterfactuals generated successfully!")
+                    st.session_state.experiment_logger.set_batch_generator(st.session_state.batch_generator.get_info())
+                else:
+                    st.warning("⚠️ No batch counterfactuals generated. Check the parameters.")
+        
+        st.divider()
+        st.markdown(str(st.session_state.batch_generator))
+        # Display save experiment button
+
+        st.markdown("### 💾 Save Batch Experiment")
+        experiment_name = st.text_input(
+            "Experiment Name",
+            placeholder="Enter a name for the batch experiment",
+            key="batch_experiment_name"
+        )
+        if st.button("Save Batch Experiment"):
+            st.session_state.experiment_logger.set_local_generator(None)
+            st.session_state.experiment_logger.save_experiment(experiment_name)
+
+        st.divider()
+        # Display counterfactuals analysis if available
+        if st.session_state.batch_generator.has_counterfactuals():
+            st.markdown("#### Counterfactuals Analysis")
+            
+            # Import and use CounterfactualsAnalysisComponent
+            from components.couterfactuals_config import CounterfactualsAnalysisComponent
+            
+            # Create analysis component
+            analysis_component = CounterfactualsAnalysisComponent()
+            
+            # Render analysis with the generated counterfactuals
+            counterfactuals = st.session_state.batch_generator.get_counterfactuals()
+            grsf_model = st.session_state.grsf_model.get_model()
+            
+            analysis_component.render(counterfactuals, grsf_model)
 def main():
     page = GenerationPage()
     page.render()

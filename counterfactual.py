@@ -124,6 +124,15 @@ def counterfactual_batch_generation(grsf_classifier, nn_classifier, split_datase
 
     counterfactual = gen.CounterFactualCrafting(grsf_classifier, surrogate)
 
+    cf_training_progress = ""
+
+    def training_callback_cacher(epoch: int, loss: float) -> str:
+        nonlocal cf_training_progress
+        progress = f"Epoch {epoch + 1}: Loss = {loss:.4f}\n"
+        cf_training_progress += progress
+        return progress
+
+
     # Get a batch of base and target pairs
     base_target_pairs = get_base_target_pair(X_test, y_test, nb_samples)
     if base_target_pairs is None:
@@ -137,9 +146,13 @@ def counterfactual_batch_generation(grsf_classifier, nn_classifier, split_datase
                                                                      epochs=epochs, 
                                                                      lr=lr, 
                                                                      beta=beta,
-                                                                    training_callback=training_callback)
+                                                                    training_callback=training_callback_cacher)
         counterfactuals.append((counterfactual_sample, target, base))
-    
+
+        # print(f"DEBUG counterfactual.py:  {cf_training_progress}")
+        training_callback(cf_training_progress)
+        cf_training_progress = ""  # Reset the progress after each counterfactual generation
+
     return counterfactuals
 
 def counterfactual_local_generation(grsf_classifier, classifier, target, base, base_label, binary_mask, epochs=500, lr=0.036, beta=0.80, training_callback=None) -> np.ndarray:

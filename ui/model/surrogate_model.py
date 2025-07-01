@@ -46,6 +46,12 @@ class SurrogateModelObject:
         self._training_progress = ""
         self._accuracy = None
 
+    def is_trained(self) -> bool:
+        """
+        Check if the model has been trained.
+        """
+        return self._model is not None and self._accuracy is not None
+
     def get_model(self):
         if self._model is None:
             raise ValueError("Model has not been trained yet. Please train the model first.")
@@ -114,14 +120,25 @@ class SurrogateModelObject:
         self._accuracy = self._model.evaluate(X_test, y_test)
         if self._accuracy is None:
             raise ValueError("Model training failed. Please check the parameters and dataset.")
-        
+
+    def get_info(self) -> dict:
+        if self._model is None:
+            raise ValueError("Model not trained yet. Please train the model first.")
+        return {
+            "model_architecture": str(self._model_arch),
+            "parameters": self._parameters,
+            "training_progress": self._training_progress,
+            "accuracy": self._accuracy,
+            "epochs": self._epochs,
+            "learning_rate": self._learning_rate
+        }
     
     def __str__(self):
         if self.is_empty():
             return "Surrogate model is not set."
         
         return (
-            f"Surrogate Model Architecture: {self._model_arch}\n"
+            f"Surrogate Model Architecture: {str(self._model_arch)}\n"
             f"Parameters: {self._parameters}\n"
             f"Training Progress: {self._training_progress}\n"
             f"Accuracy: {self._accuracy}\n"
