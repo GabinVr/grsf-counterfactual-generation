@@ -63,6 +63,9 @@ There is two ways to try out the project:
       -> Note to self: I should build a new module for this that would be unified across the project.
       and then I could use it to save the experiment logs / load them in the Streamlit app.
 
+### Bugs and issues
+- [ ] When you train a surrogate model, if you change training parameters and re-run it does not stop the current training process.
+
 ### Long-term goals
 - [ ] Add more surrogate model architectures
 - [ ] Implement additional counterfactual generation methods

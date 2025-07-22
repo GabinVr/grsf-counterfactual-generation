@@ -267,6 +267,18 @@ class ExperimentsPage:
                 st.write(f"**Base Class:** {local['base_class']}")
                 st.write(f"**Target Class:** {local['target_class']}")
                 st.write(f"**Successfully Generated:** {local['is_generated']}")
+            
+            if 'batch_generation' in summary:
+                batch = summary['batch_generation']
+                batch_stats = batch.get('stats', {})
+                valid_count = 0
+                for stat in batch_stats:
+                    if batch_stats[stat].get('valid', False):
+                        valid_count += 1
+                st.write(f"**Total Generated:** {len(batch_stats)}")
+                st.write(f"**Valid Counterfactuals:** {valid_count/len(batch_stats) * 100:.2f}%")
+
+
     
     def _render_experiment_data(self, experiment_data):
         """Render experiment data visualizations."""

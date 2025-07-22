@@ -5,7 +5,7 @@ UI_ROOT = os.path.dirname(os.path.dirname(__file__))
 if UI_ROOT not in sys.path:
     sys.path.append(UI_ROOT)
 from utils import getDataset
-from components.model_config import useDNN
+from components.model_config import useDNN, dnnUtils
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -90,7 +90,7 @@ class SurrogateModelObject:
             raise ValueError("Model cannot be None.")
         setup = useDNN(model)
         self._model = setup.getSetupModel(**self._parameters)
-        self._model_arch = model.__class__.__name__
+        self._model_arch = self._model.get_architecture()
     
     def set_training_progress_callback(self, **kwargs):
         callback = kwargs.get('callback', None)
@@ -125,7 +125,7 @@ class SurrogateModelObject:
         if self._model is None:
             raise ValueError("Model not trained yet. Please train the model first.")
         return {
-            "model_architecture": str(self._model_arch),
+            "model_architecture": self._model_arch,
             "parameters": self._parameters,
             "training_progress": self._training_progress,
             "accuracy": self._accuracy,

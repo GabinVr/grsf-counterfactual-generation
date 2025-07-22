@@ -52,6 +52,18 @@ class dnnUtils:
             list: List of model names
         """
         return models.listModels()
+
+    @staticmethod
+    def get_model_architecture(SurrogateClassifierArchitecture: gen.BaseSurrogateClassifier) -> str:
+        modelsDict = models.listModels()
+        print(f"DEBUG modelsDict: {modelsDict}, SurrogateClassifierArchitecture: {SurrogateClassifierArchitecture}")
+        if isinstance(SurrogateClassifierArchitecture, str):
+            SurrogateClassifierArchitecture = getattr(gen, SurrogateClassifierArchitecture, None)
+            if SurrogateClassifierArchitecture is None:
+                logging.error(f"Model {SurrogateClassifierArchitecture} not found in gen module.")
+                return "Unknown Model"
+        return [name for name, cls in modelsDict.items() if cls == SurrogateClassifierArchitecture][0] if SurrogateClassifierArchitecture in modelsDict.values() else "Unknown Model" 
+
     
 class useDNN:
     """

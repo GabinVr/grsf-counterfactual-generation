@@ -32,6 +32,10 @@ class SimpleFeedforwardClassifier(gen.BaseSurrogateClassifier):
         return x
     
     @staticmethod
+    def get_architecture():
+        return "SimpleFeedforwardClassifier"
+
+    @staticmethod
     def get_params(sample_size: int = None, num_classes: int = None):
         """Return model parameters."""
         params = {
@@ -68,6 +72,10 @@ class LSTMClassifier(gen.BaseSurrogateClassifier):
         h_n = h_n.view(-1, self.hidden_size)
         x = self.fc(h_n)
         return x
+    
+    @staticmethod
+    def get_architecture():
+        return "LSTMClassifier"
     
     @staticmethod
     def get_params(sample_size: int = None, num_classes: int = None):
@@ -110,6 +118,10 @@ class CNNClassifier(gen.BaseSurrogateClassifier):
         x = x.view(x.size(0), -1)
         x = self.fc(x)
         return x
+    
+    @staticmethod
+    def get_architecture():
+        return "CNNClassifier"
     
     @staticmethod
     def get_params(sample_size: int = None, num_classes: int = None):
@@ -191,6 +203,10 @@ class TransformerClassifier(gen.BaseSurrogateClassifier):
         x = self.classifier(x)  # (batch_size, num_classes)
         
         return x
+    
+    @staticmethod
+    def get_architecture():
+        return "TransformerClassifier"
 
     @staticmethod
     def get_params(sample_size: int = None, num_classes: int = None):
