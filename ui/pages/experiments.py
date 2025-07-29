@@ -277,8 +277,6 @@ class ExperimentsPage:
                         valid_count += 1
                 st.write(f"**Total Generated:** {len(batch_stats)}")
                 st.write(f"**Valid Counterfactuals:** {valid_count/len(batch_stats) * 100:.2f}%")
-
-
     
     def _render_experiment_data(self, experiment_data):
         """Render experiment data visualizations."""
