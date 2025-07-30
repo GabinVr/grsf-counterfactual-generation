@@ -16,7 +16,6 @@ from gen import CounterFactualCrafting
 from counterfactual import counterfactual_local_generation, counterfactual_batch_generation, get_target_from_base_class
 import wildboar.distance as wb_distance
 
-
 class LocalCounterfactualGeneratorObject:
     def __init__(self):
         """Initialize the local counterfactual generator object"""

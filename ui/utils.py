@@ -1,5 +1,5 @@
 import wildboar.datasets
-
+from wildboar.datasets import clear_cache, refresh_repositories
 def getDatasetNames():
     """
     Get the names of the datasets available in wildboar.datasets compatible with GRSF.
@@ -12,6 +12,12 @@ def getDatasetNames():
                                                                         "Fungi",
                                                                         "FiftyWords"]]
 def getDataset(dataset_name:str):
+    try:
+        # Clear cache and refresh repositories
+        clear_cache()
+        refresh_repositories()
+    except Exception as e:
+        print(f"Error refreshing wildboar datasets: {e}")
     return wildboar.datasets.load_dataset(dataset_name)
 
 

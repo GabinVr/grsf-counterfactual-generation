@@ -6,6 +6,8 @@ if UI_ROOT not in sys.path:
     sys.path.append(UI_ROOT)
 from utils import getDataset
 from components.model_config import useDNN, dnnUtils
+from typing import Dict
+import torch
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -26,6 +28,7 @@ class SurrogateModelObject:
         self._epochs = 100              
         self._learning_rate = 0.001  
         self._training_progress_callback = None
+        self._approximation_metrics = None
 
     def is_empty(self) -> bool:
         return self._model is None
@@ -61,6 +64,11 @@ class SurrogateModelObject:
         if self._accuracy is None:
             raise ValueError("Model has not been trained yet. Please train the model first.")
         return self._accuracy
+
+    def get_approximation_metrics(self) -> Dict:
+        if self._approximation_metrics is None:
+            raise ValueError("Approximation metrics have not been evaluated yet. Please evaluate first.")
+        return self._approximation_metrics
     
     def set_parameters(self, parameters: dict) -> None:
         if not isinstance(parameters, dict):
@@ -97,6 +105,38 @@ class SurrogateModelObject:
         if not callable(callback):
             raise ValueError("Training progress callback must be a callable function.")
         self._training_progress_callback = callback
+    
+    def _evaluate_approximation(self) -> Dict:
+        """
+        We evaluate how well the surrogate model approximates the GRSF model.
+        returns a dictionary with :
+            - 'agreement': float, percentage of agreement between surrogate and GRSF model predictions
+            - 'surrogate_accuracy': float, accuracy of the surrogate model on the test set
+        """
+        if self._grsf_model is None:
+            raise ValueError("GRSF model not set. Please set a GRSF model first.")
+        if self._model is None:
+            raise ValueError("Surrogate model not set. Please set a surrogate model first.")
+        
+        X_train, y_train, X_test, y_test = self._split_dataset
+        if X_train is None or y_train is None:
+            raise ValueError("Split dataset is not valid. Please check the dataset.")
+        if X_test is None or y_test is None:
+            raise ValueError("Test dataset is not valid. Please check the dataset.")
+        
+        surrogate_predictions = self._model.predict(X_test)
+        grsf_predictions = self._grsf_model.predict(X_test)
+
+        if isinstance(surrogate_predictions, torch.Tensor):
+            surrogate_predictions = surrogate_predictions.cpu().numpy()
+    
+        agreement = (surrogate_predictions == grsf_predictions).mean() * 100
+
+        self._approximation_metrics = {
+            "agreement": agreement,
+            "surrogate_accuracy": self._model.evaluate(X_test, y_test)
+        }
+        return self._approximation_metrics    
 
     def train(self) -> None:
         if self._split_dataset is None:
@@ -118,9 +158,12 @@ class SurrogateModelObject:
         )
 
         self._accuracy = self._model.evaluate(X_test, y_test)
+        self._evaluate_approximation()
         if self._accuracy is None:
             raise ValueError("Model training failed. Please check the parameters and dataset.")
-
+        if self._approximation_metrics is None:
+            raise ValueError("Approximation metrics not evaluated. Please evaluate the model first.")
+        
     def get_info(self) -> dict:
         if self._model is None:
             raise ValueError("Model not trained yet. Please train the model first.")

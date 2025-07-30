@@ -227,6 +227,23 @@ class ExperimentsPage:
                 
         except ExperimentLoggerError as e:
             st.error(f"Error loading experiment details: {e}")
+        
+    def _compute_average_distances(self, batch_stats):
+        """Compute average distances for batch generation statistics."""
+        if not batch_stats:
+            return {}
+        
+        avg_base_euclidean = sum(stat['base_euclidean'] for stat in batch_stats.values()) / len(batch_stats)
+        avg_target_euclidean = sum(stat['target_euclidean'] for stat in batch_stats.values()) / len(batch_stats)
+        avg_base_dtw = sum(stat['base_dtw'] for stat in batch_stats.values()) / len(batch_stats)
+        avg_target_dtw = sum(stat['target_dtw'] for stat in batch_stats.values()) / len(batch_stats)
+
+        return {
+            "avg_base_euclidean": avg_base_euclidean,
+            "avg_target_euclidean": avg_target_euclidean,
+            "avg_base_dtw": avg_base_dtw,
+            "avg_target_dtw": avg_target_dtw
+        }
     
     def _render_experiment_info(self, summary):
         """Render experiment information."""
@@ -277,6 +294,11 @@ class ExperimentsPage:
                         valid_count += 1
                 st.write(f"**Total Generated:** {len(batch_stats)}")
                 st.write(f"**Valid Counterfactuals:** {valid_count/len(batch_stats) * 100:.2f}%")
+                avg_distances = self._compute_average_distances(batch_stats)
+                print(f"**Average Distances:**")
+                for key, value in avg_distances.items():
+                    st.write(f"**{key.replace('_', ' ').title()}:** {value:.2f}")
+
     
     def _render_experiment_data(self, experiment_data):
         """Render experiment data visualizations."""

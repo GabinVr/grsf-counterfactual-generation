@@ -196,3 +196,5 @@ cython_debug/
 # personal
 .png
 experiments/*.json
+baseline.py
+baseline_results

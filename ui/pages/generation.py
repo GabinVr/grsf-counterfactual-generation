@@ -28,6 +28,7 @@ class GenerationPage:
             layout="wide",
             initial_sidebar_state="collapsed"
         )
+        
     def _initialize_session_state(self) -> None:
         if "dataset" not in st.session_state:
             st.session_state.dataset = DatasetObject()
@@ -184,6 +185,14 @@ class GenerationPage:
 
         st.divider()
         st.markdown(str(st.session_state.surrogate_model)) # Prints accuracy and training trace
+        st.divider()
+        st.markdown("How well does the surrogate model approximate the GRSF model?")
+        if st.session_state.surrogate_model.is_trained():
+            approximation_metrics = st.session_state.surrogate_model.get_approximation_metrics()
+            if approximation_metrics:
+                st.write(f"Agreement with GRSF model: {approximation_metrics['agreement']:.2f}%")
+                st.write(f"Surrogate model accuracy: {approximation_metrics['surrogate_accuracy']:.2f}%")
+                st.write(f"GRSF model accuracy: {st.session_state.grsf_model.get_accuracy():.2f}%")
 
     def _render_model_parameters_sel(self, available_params):
         parameters = {}

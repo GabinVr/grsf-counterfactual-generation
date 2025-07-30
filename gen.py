@@ -205,6 +205,14 @@ class BaseSurrogateClassifier(Module):
         """
         Predict the class labels for the input data.
         """
+        if not isinstance(x, torch.Tensor):
+            x = torch.tensor(x, dtype=torch.float32)
+        
+        if len(x.shape) == 1:
+            x = x.unsqueeze(0)
+        elif len(x.shape) == 2:
+            x = x.unsqueeze(1)
+
         with torch.no_grad():
             x = self.forward(x)
             _, predicted = torch.max(x, 1)
