@@ -1,6 +1,9 @@
 import logging
 import os
+import pickle
+import subprocess
 import sys
+import tempfile
 import torch
 import numpy as np
 import streamlit as st
@@ -19,11 +22,82 @@ from gen import CounterFactualCrafting
 from counterfactual import counterfactual_local_generation, counterfactual_batch_generation, get_target_from_base_class
 import wildboar.distance as wb_distance
 
+_WORKER_SCRIPT = os.path.join(os.path.dirname(__file__), "generate_counterfactual_worker.py")
+
+
+def _run_counterfactual_worker(payload: dict) -> dict:
+    """Run the counterfactual generation worker in an isolated subprocess.
+
+    Streamlit's ScriptRunner interferes with PyTorch gradient-based optimization,
+    causing the generation loop to hang. Running it in a separate Python process
+    sidesteps the issue entirely.
+    """
+    input_fd, input_path = tempfile.mkstemp(suffix=".pkl", prefix="cf_in_")
+    output_fd, output_path = tempfile.mkstemp(suffix=".pkl", prefix="cf_out_")
+    os.close(input_fd)
+    os.close(output_fd)
+    try:
+        with open(input_path, "wb") as f:
+            pickle.dump(payload, f)
+
+        proc = subprocess.run(
+            [sys.executable, _WORKER_SCRIPT, input_path, output_path],
+            capture_output=True,
+            text=True,
+        )
+
+        if os.path.getsize(output_path) == 0:
+            raise RuntimeError(
+                "Counterfactual generation subprocess died before writing output "
+                "(crashed during import or early in main).\n"
+                f"returncode={proc.returncode}\n"
+                f"stdout:\n{proc.stdout}\n"
+                f"stderr:\n{proc.stderr}"
+            )
+
+        try:
+            with open(output_path, "rb") as f:
+                result = pickle.load(f)
+        except Exception as exc:
+            raise RuntimeError(
+                "Failed to unpickle counterfactual subprocess output.\n"
+                f"returncode={proc.returncode}\n"
+                f"stdout:\n{proc.stdout}\n"
+                f"stderr:\n{proc.stderr}"
+            ) from exc
+
+        if proc.returncode != 0 or "error" in result:
+            err = result.get("error", proc.stderr or "unknown error")
+            raise RuntimeError(f"Counterfactual generation subprocess failed:\n{err}")
+
+        return result
+    finally:
+        for p in (input_path, output_path):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+
+def _as_numpy(x):
+    """Convert a torch tensor or array-like to a plain numpy array for pickling."""
+    if torch.is_tensor(x):
+        return x.detach().cpu().numpy()
+    return np.asarray(x)
+
+
+def _snapshot_state_dict(nn_module):
+    """Snapshot a model's state dict as detached CPU tensors."""
+    return {k: v.detach().cpu() for k, v in nn_module.state_dict().items()}
+
+
 class LocalCounterfactualGeneratorObject:
     def __init__(self):
         """Initialize the local counterfactual generator object"""
         self._grsf_model = None
         self._surrogate_model = None
+        self._surrogate_class_name = None
+        self._surrogate_params = None
+        self._surrogate_state_dict = None
         self._base_sample = None
         self._base_class = None
         self._target_sample = None
@@ -74,17 +148,31 @@ class LocalCounterfactualGeneratorObject:
         """Get the training progress log"""
         return self._training_progress
     
-    def set_models(self, grsf_model, surrogate_model) -> None:
-        """Set the GRSF and surrogate models used for generation"""
+    def set_models(self, grsf_model, surrogate_wrapper) -> None:
+        """Set the GRSF and surrogate models used for generation.
+
+        ``surrogate_wrapper`` is a ``SurrogateModelObject`` so we can extract
+        the class name, parameters and state dict to pass through the subprocess
+        boundary without pickling the live ``nn.Module``.
+        """
         if grsf_model is None:
             raise ValueError("GRSF model cannot be None.")
-        if surrogate_model is None:
+        if surrogate_wrapper is None:
             raise ValueError("Surrogate model cannot be None.")
-            
+        if not hasattr(surrogate_wrapper, "get_model"):
+            raise ValueError(
+                "Surrogate model must be a SurrogateModelObject (has get_model); "
+                f"got {type(surrogate_wrapper).__name__}."
+            )
+
+        nn_module = surrogate_wrapper.get_model()
         self._grsf_model = grsf_model
-        self._surrogate_model = surrogate_model
+        self._surrogate_model = nn_module
+        self._surrogate_class_name = type(nn_module).__name__
+        self._surrogate_params = surrogate_wrapper._parameters
+        self._surrogate_state_dict = _snapshot_state_dict(nn_module)
         self.clear()  # Clear previous counterfactuals when models change
-    
+
     def set_base_sample(self, sample, class_label: int) -> None:
         """Set the base sample from which to generate a counterfactual"""
         if sample is None:
@@ -184,45 +272,45 @@ class LocalCounterfactualGeneratorObject:
         # Validate input
         if self._grsf_model is None or self._surrogate_model is None:
             raise ValueError("GRSF and surrogate models must be set before generating counterfactuals.")
-            
+
         if self._base_sample is None or self._target_sample is None:
             raise ValueError("Base and target samples must be set before generating counterfactuals.")
-            
+
         if self._parameters is None:
             raise ValueError("Parameters must be set before generating counterfactuals.")
-            
+
         # Reset training progress
         self._training_progress = ""
         logger.debug(str(self))
         logger.debug(f"Surrogate model type: {type(self._surrogate_model)}")
-        crafter = CounterFactualCrafting(
-            self._grsf_model,
-            self._surrogate_model
-        )
 
         start_time = time.time()
         logger.debug(f"Starting counterfactual generation with parameters: {self._parameters}")
-        # Generate the counterfactual
-        self._counterfactual = crafter.generate_local_counterfactuals(
-            self._target_sample,
-            self._base_sample,
-            self._base_class,
-            self._binary_mask,
-            lr =self._parameters["learning_rate"],
-            epochs=self._parameters["epochs"],
-            beta=self._parameters["beta"],
-            debug = True,
-            training_callback=self._training_callback,
-        )
-        self._counterfactual = self._counterfactual.detach().cpu().numpy() if torch.is_tensor(self._counterfactual) else self._counterfactual
+
+        payload = {
+            "mode": "local",
+            "grsf_model": self._grsf_model,
+            "surrogate_class_name": self._surrogate_class_name,
+            "surrogate_params": self._surrogate_params,
+            "surrogate_state_dict": self._surrogate_state_dict,
+            "base_sample": _as_numpy(self._base_sample),
+            "base_class": int(self._base_class),
+            "target_sample": _as_numpy(self._target_sample),
+            "binary_mask": _as_numpy(self._binary_mask) if self._binary_mask is not None else None,
+            "parameters": self._parameters,
+        }
+        result = _run_counterfactual_worker(payload)
+
+        self._counterfactual = result["counterfactual"]
+        self._training_progress = result["training_progress"]
         logger.debug(f"Counterfactual generation completed in {time.time() - start_time:.2f} seconds")
         # End timing
         self._generation_time = time.time() - start_time
-        
+
         # Check if generation was successful
         if self._counterfactual is None:
             return False
-            
+
         self._is_generated = True
         return True
             
@@ -331,6 +419,9 @@ class GlobalCounterfactualGeneratorObject:
         """Initialize the global counterfactual generator object"""
         self._grsf_model = None
         self._surrogate_model = None
+        self._surrogate_class_name = None
+        self._surrogate_params = None
+        self._surrogate_state_dict = None
         self._split_dataset = None
         self._parameters = None
         self._counterfactuals = None
@@ -366,17 +457,31 @@ class GlobalCounterfactualGeneratorObject:
         """Get the training progress log"""
         return self._training_progress
     
-    def set_models(self, grsf_model, surrogate_model) -> None:
-        """Set the GRSF and surrogate models used for generation"""
+    def set_models(self, grsf_model, surrogate_wrapper) -> None:
+        """Set the GRSF and surrogate models used for generation.
+
+        ``surrogate_wrapper`` is a ``SurrogateModelObject`` so we can extract
+        the class name, parameters and state dict to pass through the subprocess
+        boundary without pickling the live ``nn.Module``.
+        """
         if grsf_model is None:
             raise ValueError("GRSF model cannot be None.")
-        if surrogate_model is None:
+        if surrogate_wrapper is None:
             raise ValueError("Surrogate model cannot be None.")
-            
+        if not hasattr(surrogate_wrapper, "get_model"):
+            raise ValueError(
+                "Surrogate model must be a SurrogateModelObject (has get_model); "
+                f"got {type(surrogate_wrapper).__name__}."
+            )
+
+        nn_module = surrogate_wrapper.get_model()
         self._grsf_model = grsf_model
-        self._surrogate_model = surrogate_model
+        self._surrogate_model = nn_module
+        self._surrogate_class_name = type(nn_module).__name__
+        self._surrogate_params = surrogate_wrapper._parameters
+        self._surrogate_state_dict = _snapshot_state_dict(nn_module)
         self.clear()  # Clear previous counterfactuals when models change
-    
+
     def set_split_dataset(self, split_dataset: Tuple) -> None:
         """Set the split dataset for counterfactual generation"""
         if split_dataset is None:
@@ -409,47 +514,49 @@ class GlobalCounterfactualGeneratorObject:
         # Validate input
         if self._grsf_model is None or self._surrogate_model is None:
             raise ValueError("GRSF and surrogate models must be set before generating counterfactuals.")
-            
+
         if self._split_dataset is None:
             raise ValueError("Split dataset must be set before generating counterfactuals.")
-            
+
         if self._parameters is None:
             raise ValueError("Parameters must be set before generating counterfactuals.")
-        
+
         # Reset training progress
         self._training_progress = []
-        
+
         start_time = time.time()
         logger.debug(f"Starting batch counterfactual generation with {self._nb_samples} samples")
         logger.debug(f"Parameters: {self._parameters}")
-        
+
         try:
-            # Generate batch counterfactuals
-            self._counterfactuals = counterfactual_batch_generation(
-                grsf_classifier=self._grsf_model,
-                nn_classifier=self._surrogate_model,
-                split_dataset=self._split_dataset,
-                nb_samples=self._nb_samples,
-                epochs=self._parameters["epochs"],
-                lr=self._parameters["learning_rate"],
-                beta=self._parameters["beta"],
-                debug=True,
-                training_callback=self._training_callback
-            )
-            
+            payload = {
+                "mode": "batch",
+                "grsf_model": self._grsf_model,
+                "surrogate_class_name": self._surrogate_class_name,
+                "surrogate_params": self._surrogate_params,
+                "surrogate_state_dict": self._surrogate_state_dict,
+                "split_dataset": self._split_dataset,
+                "nb_samples": self._nb_samples,
+                "parameters": self._parameters,
+            }
+            result = _run_counterfactual_worker(payload)
+
+            self._counterfactuals = result["counterfactuals"]
+            self._training_progress = result["training_progress"]
+
             # End timing
             self._generation_time = time.time() - start_time
-            
+
             # Check if generation was successful
             if self._counterfactuals is None or len(self._counterfactuals) == 0:
                 logger.debug("Batch generation failed - no counterfactuals generated")
                 return False
-                
+
             self._is_generated = True
             logger.debug(f"Batch counterfactual generation completed in {self._generation_time:.2f} seconds")
             logger.debug(f"Generated {len(self._counterfactuals)} counterfactuals")
             return True
-            
+
         except Exception as e:
             logger.error(f"Batch counterfactual generation failed: {str(e)}")
             self._training_progress.append(f"Batch generation error: {str(e)}")

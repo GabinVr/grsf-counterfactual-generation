@@ -268,7 +268,7 @@ class GenerationPage:
         if "local_generator" not in st.session_state:
             st.session_state.local_generator = LocalCounterfactualGeneratorObject()
         st.session_state.local_generator.set_models(st.session_state.grsf_model.get_model(),
-                                                    st.session_state.surrogate_model.get_model())
+                                                    st.session_state.surrogate_model)
                                                     
         st.divider()
         st.markdown("#### Local generation parameters")
@@ -463,7 +463,7 @@ class GenerationPage:
         # Set models and dataset for the batch generator
         st.session_state.batch_generator.set_models(
             st.session_state.grsf_model.get_model(),
-            st.session_state.surrogate_model.get_model()
+            st.session_state.surrogate_model
         )
         st.session_state.batch_generator.set_split_dataset(
             st.session_state.grsf_model.get_split_dataset()

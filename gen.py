@@ -267,7 +267,7 @@ class BaseSurrogateClassifier(Module):
             loss = criterion(outputs, y_train)
             loss.backward()
             optimizer.step()
-            
+
             if (epoch+1) % 10 == 0 and debug:
                 logger.info(f"Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.4f}")
             if training_callback is not None:

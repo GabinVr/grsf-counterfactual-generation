@@ -1,5 +1,8 @@
 import os
+import pickle
+import subprocess
 import sys
+import tempfile
 
 UI_ROOT = os.path.dirname(os.path.dirname(__file__))
 if UI_ROOT not in sys.path:
@@ -13,6 +16,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 import gen
+
+_WORKER_SCRIPT = os.path.join(os.path.dirname(__file__), "train_surrogate_worker.py")
 
 class SurrogateModelObject:
     
@@ -145,20 +150,69 @@ class SurrogateModelObject:
             raise ValueError("Parameters not set. Please set parameters first.")
         if self._grsf_model is None:
             raise ValueError("GRSF model not set. Please set a GRSF model first.")
+        if self._model is None:
+            raise ValueError("Surrogate model not set. Please set a model first.")
 
         X_train, y_train, X_test, y_test = self._split_dataset
         if X_train is None or y_train is None:
             raise ValueError("Split dataset is not valid. Please check the dataset.")
-        self._model.train(
-            X_train, y_train,
-            epochs=self._epochs, 
-            lr=self._learning_rate,
-            training_callback=self._training_progress_callback,
-            debug=True
-        )
 
-        self._accuracy = self._model.evaluate(X_test, y_test)
-        self._evaluate_approximation()
+        # Run training in a subprocess to isolate it from Streamlit's ScriptRunner,
+        # which causes the training loop to hang.
+        model_class_name = type(self._model).__name__
+        input_fd, input_path = tempfile.mkstemp(suffix=".pkl", prefix="surrogate_in_")
+        output_fd, output_path = tempfile.mkstemp(suffix=".pkl", prefix="surrogate_out_")
+        os.close(input_fd)
+        os.close(output_fd)
+        try:
+            with open(input_path, "wb") as f:
+                pickle.dump(
+                    (X_train, y_train, X_test, y_test, self._grsf_model,
+                     model_class_name, self._parameters,
+                     self._epochs, self._learning_rate),
+                    f,
+                )
+
+            proc = subprocess.run(
+                [sys.executable, _WORKER_SCRIPT, input_path, output_path],
+                capture_output=True,
+                text=True,
+            )
+
+            if os.path.getsize(output_path) == 0:
+                raise RuntimeError(
+                    "Surrogate training subprocess died before writing output "
+                    "(crashed during import or early in main).\n"
+                    f"returncode={proc.returncode}\n"
+                    f"stdout:\n{proc.stdout}\n"
+                    f"stderr:\n{proc.stderr}"
+                )
+
+            try:
+                with open(output_path, "rb") as f:
+                    result = pickle.load(f)
+            except Exception as exc:
+                raise RuntimeError(
+                    "Failed to unpickle surrogate training subprocess output.\n"
+                    f"returncode={proc.returncode}\n"
+                    f"stdout:\n{proc.stdout}\n"
+                    f"stderr:\n{proc.stderr}"
+                ) from exc
+
+            if proc.returncode != 0 or "error" in result:
+                err = result.get("error", proc.stderr or "unknown error")
+                raise RuntimeError(f"Surrogate training subprocess failed:\n{err}")
+
+            self._model = result["model"]
+            self._accuracy = result["accuracy"]
+            self._approximation_metrics = result["approximation_metrics"]
+            self._model_arch = result["model_arch"]
+        finally:
+            for p in (input_path, output_path):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
         if self._accuracy is None:
             raise ValueError("Model training failed. Please check the parameters and dataset.")
         if self._approximation_metrics is None:
