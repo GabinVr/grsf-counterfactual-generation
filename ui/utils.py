@@ -1,5 +1,10 @@
+import logging
+
 import wildboar.datasets
 from wildboar.datasets import clear_cache, refresh_repositories
+
+logger = logging.getLogger(__name__)
+
 def getDatasetNames():
     """
     Get the names of the datasets available in wildboar.datasets compatible with GRSF.
@@ -17,7 +22,7 @@ def getDataset(dataset_name:str):
         clear_cache()
         refresh_repositories()
     except Exception as e:
-        print(f"Error refreshing wildboar datasets: {e}")
+        logger.error(f"Error refreshing wildboar datasets: {e}")
     return wildboar.datasets.load_dataset(dataset_name)
 
 

@@ -295,7 +295,7 @@ class ExperimentsPage:
                 st.write(f"**Total Generated:** {len(batch_stats)}")
                 st.write(f"**Valid Counterfactuals:** {valid_count/len(batch_stats) * 100:.2f}%")
                 avg_distances = self._compute_average_distances(batch_stats)
-                print(f"**Average Distances:**")
+                st.write("**Average Distances:**")
                 for key, value in avg_distances.items():
                     st.write(f"**{key.replace('_', ' ').title()}:** {value:.2f}")
 

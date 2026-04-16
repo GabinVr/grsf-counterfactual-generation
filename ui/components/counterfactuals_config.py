@@ -154,7 +154,7 @@ class CounterfactualsConfig:
         :param epoch: Current epoch number
         :param loss: Current loss value
         """
-        print(f"DEBUG Epoch {epoch + 1}: Loss = {loss:.4f}")
+        getLogger(__name__).debug(f"Epoch {epoch + 1}: Loss = {loss:.4f}")
         st.session_state.training_progress += f"Epoch {epoch + 1}: Loss = {loss:.4f}\n"
         return
             

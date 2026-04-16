@@ -56,7 +56,7 @@ class dnnUtils:
     @staticmethod
     def get_model_architecture(SurrogateClassifierArchitecture: gen.BaseSurrogateClassifier) -> str:
         modelsDict = models.listModels()
-        print(f"DEBUG modelsDict: {modelsDict}, SurrogateClassifierArchitecture: {SurrogateClassifierArchitecture}")
+        logging.debug(f"modelsDict: {modelsDict}, SurrogateClassifierArchitecture: {SurrogateClassifierArchitecture}")
         if isinstance(SurrogateClassifierArchitecture, str):
             SurrogateClassifierArchitecture = getattr(gen, SurrogateClassifierArchitecture, None)
             if SurrogateClassifierArchitecture is None:

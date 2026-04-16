@@ -1,10 +1,13 @@
-import time 
+import logging
+import time
 import json
 import numpy as np
 import pandas as pd
 import os
 import sys
 from typing import Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 EXPERIMENTS_DIR = os.path.join(PROJECT_ROOT, 'experiments')
@@ -156,7 +159,7 @@ class ExperimentLogger:
         """
         Clear the local and batch generators.
         """
-        print("Clearing local and batch generators.")
+        logger.info("Clearing local and batch generators.")
     
     def save_experiment(self, experiment_name: str) -> None:
         """
@@ -172,7 +175,7 @@ class ExperimentLogger:
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         filename = f"{experiment_name}_{timestamp}.json"
         filepath = os.path.join(EXPERIMENTS_DIR, filename)
-        print(f"DEBUG: Saving experiment to {filepath}")
+        logger.debug(f"Saving experiment to {filepath}")
 
         # Serialize all data to handle NumPy arrays and other non-JSON types
         experiment_data = {
@@ -192,7 +195,7 @@ class ExperimentLogger:
             with open(filepath, 'w') as f:
                 json.dump(experiment_data, f, indent=4, cls=NumpyEncoder, ensure_ascii=False)
             
-            print(f"Experiment saved to {filepath}")
+            logger.info(f"Experiment saved to {filepath}")
             self._local_generator = None
             self._batch_generator = None
         except (TypeError, ValueError, IOError) as e:
@@ -214,7 +217,7 @@ class ExperimentLogger:
         self._local_generator = experiment_data.get("local_generator")
         self._batch_generator = experiment_data.get("batch_generator")
         
-        print(f"Experiment loaded from {filepath}")
+        logger.info(f"Experiment loaded from {filepath}")
 
     def get_experiment_info(self) -> Dict[str, Any]:
         """
@@ -244,9 +247,9 @@ class ExperimentLogger:
         indent = "  " * current_depth
         try:
             json.dumps(serialize_data(data), cls=NumpyEncoder)
-            print(f"{indent}✓ {name}: {type(data)} - Serializable")
+            logger.debug(f"{indent}OK {name}: {type(data)} - Serializable")
         except (TypeError, ValueError) as e:
-            print(f"{indent}✗ {name}: {type(data)} - ERROR: {str(e)}")
+            logger.error(f"{indent}FAIL {name}: {type(data)} - ERROR: {str(e)}")
             
             if isinstance(data, dict):
                 for key, value in data.items():
@@ -299,7 +302,7 @@ class ExperimentManager:
                     }
                     experiments.append(experiment_info)
                 except (json.JSONDecodeError, IOError) as e:
-                    print(f"Warning: Could not read experiment file {file}: {e}")
+                    logger.warning(f"Could not read experiment file {file}: {e}")
                     continue
         
         # Sort by timestamp (newest first)
@@ -348,7 +351,7 @@ class ExperimentManager:
         
         try:
             os.remove(filepath)
-            print(f"Experiment {experiment_name} deleted successfully.")
+            logger.info(f"Experiment {experiment_name} deleted successfully.")
         except IOError as e:
             raise ExperimentLoggerError(f"Could not delete experiment file {experiment_name}: {e}")
     

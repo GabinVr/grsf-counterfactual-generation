@@ -564,7 +564,7 @@ class GenerationPage:
             st.markdown("#### Counterfactuals Analysis")
             
             # Import and use CounterfactualsAnalysisComponent
-            from components.couterfactuals_config import CounterfactualsAnalysisComponent
+            from components.counterfactuals_config import CounterfactualsAnalysisComponent
             
             # Create analysis component
             analysis_component = CounterfactualsAnalysisComponent()

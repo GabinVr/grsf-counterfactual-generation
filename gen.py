@@ -10,6 +10,7 @@ It also provides a gradient-based counterfactual generation method.
 This module was written with the help of Claude 3.5 Sonnet and Cursor
 """
 
+import logging
 import os
 
 import matplotlib.pyplot as plt
@@ -24,6 +25,8 @@ from wildboar.datasets import load_synthetic_control
 from wildboar.linear_model import RandomShapeletClassifier
 from pyts.approximation import PiecewiseAggregateApproximation as PAA
 from abc import ABC, abstractmethod
+
+logger = logging.getLogger(__name__)
 ##### UTILS #####
 
 def getDatasetNames():
@@ -104,7 +107,7 @@ def grsf(dataset:str, params:dict, debug:bool=True):
         # We need to preprocess the dataset to "clean" it
         X, y = preprocess_dataset(X, y)
     except ValueError as e:
-        print(f"Error loading dataset {dataset}: {e}")
+        logger.error(f"Error loading dataset {dataset}: {e}")
         return (1, "Error-code: Dataset not found or invalid format")
     
     try:
@@ -116,7 +119,7 @@ def grsf(dataset:str, params:dict, debug:bool=True):
             alphas=params["alphas"]
         )
     except ValueError as e:
-        print(f"Error creating classifier: {e}")
+        logger.error(f"Error creating classifier: {e}")
         return (1, "Error-code: Invalid parameters for RandomShapeletClassifier")
     
     # Let's split the dataset into training and testing sets
@@ -125,7 +128,7 @@ def grsf(dataset:str, params:dict, debug:bool=True):
     try:
         classifier.fit(X_train, y_train)
     except ValueError as e:
-        print(f"Error fitting classifier: {e}")
+        logger.error(f"Error fitting classifier: {e}")
         return (1, "Error-code: Failed to fit the classifier")
     
     return classifier, (X_train, y_train, X_test, y_test)
@@ -148,10 +151,10 @@ def evaluate_grsf(classifier:RandomShapeletClassifier, X_test, y_test, debug:boo
     try:
         accuracy = classifier.score(X_test, y_test)
         if debug:
-            print(f"Accuracy: {accuracy:.2f}")
+            logger.info(f"Accuracy: {accuracy:.2f}")
         return accuracy
     except ValueError as e:
-        print(f"Error evaluating classifier: {e}")
+        logger.error(f"Error evaluating classifier: {e}")
         return None
 
 def plot_shapelets(clf, dataset:str):
@@ -183,7 +186,7 @@ def plot_shapelets(clf, dataset:str):
             plt.close()
 
     except Exception as e:
-        print(f"Error plotting shapelets: {e}")
+        logger.error(f"Error plotting shapelets: {e}")
         return
 
 class BaseSurrogateClassifier(Module):
@@ -266,11 +269,11 @@ class BaseSurrogateClassifier(Module):
             optimizer.step()
             
             if (epoch+1) % 10 == 0 and debug:
-                print(f"Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.4f}")
+                logger.info(f"Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.4f}")
             if training_callback is not None:
                 training_callback(epoch, loss.item())
         if debug:
-            print("Training complete.")
+            logger.info("Training complete.")
         return self
     
     def evaluate(self, X_test, y_test, debug:bool=True):
@@ -297,9 +300,9 @@ class BaseSurrogateClassifier(Module):
             _, predicted = torch.max(outputs, 1)
             accuracy = (predicted == y_test).sum().item() / len(y_test)
         if debug:
-            print(f"Accuracy: {accuracy:.2f}")
+            logger.info(f"Accuracy: {accuracy:.2f}")
         return accuracy
-    
+
     def get_params(self):
         """
         Return model parameters.
@@ -505,7 +508,7 @@ class CounterFactualCrafting:
         self.grsf_classifier = grsf_classifier
         self.surrogate_classifier = surrogate_classifier
         self.closest_to_boundary = None
-        print(f"DEBUG gen.py CounterFactualCrafting: {grsf_classifier}, {surrogate_classifier}")
+        logger.debug(f"CounterFactualCrafting: {grsf_classifier}, {surrogate_classifier}")
 
     def loss_fn(self, x, target, base, base_label):
         """
@@ -574,19 +577,19 @@ class CounterFactualCrafting:
 
             if pred != pred_backup:
                 if debug:
-                    print(f"Counterfactual has changed prediction at epoch {epoch+1}")
+                    logger.info(f"Counterfactual has changed prediction at epoch {epoch+1}")
                 self.closest_to_boundary = x_backup
                 break
-        
+
             if (epoch+1) % 10 == 0 and debug:
-                print(f"Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.4f}")
+                logger.info(f"Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.4f}")
             if training_callback is not None:
                 training_callback(epoch, loss.item())
     
         if debug:
-            print("Counterfactual generation complete.")
+            logger.info("Counterfactual generation complete.")
         return x
-    
+
     def generate_local_counterfactuals(self, target, base, base_label, binary_mask, 
                                        lr:float=0.01,
                                        epochs:int=100,
@@ -605,7 +608,7 @@ class CounterFactualCrafting:
         :beta: float, regularization parameter
         :training_callback: callable, a function to call at the end of each epoch for custom training logic
         """
-        print(f"DEBUG gen.py generate_local_counterfactuals: {target.shape}, {base.shape}, {base_label}, {binary_mask.shape}")
+        logger.debug(f"generate_local_counterfactuals: {target.shape}, {base.shape}, {base_label}, {binary_mask.shape}")
         assert isinstance(binary_mask, torch.Tensor), "binary_mask must be a torch.Tensor"
         assert 1 in binary_mask.unique(), "binary_mask must contain at least one 1"
         assert 0 in binary_mask.unique(), "binary_mask must contain at least one 0"
@@ -637,7 +640,7 @@ class CounterFactualCrafting:
             x.grad = x.grad * modify_mask
             
             if debug and (epoch % 50 == 0):
-                print(f"Epoch {epoch}:")
+                logger.debug(f"Epoch {epoch}:")
 
             # Update step
             x_temp = x - lr * x.grad
@@ -658,8 +661,8 @@ class CounterFactualCrafting:
 
             if pred != pred_backup:
                 if debug:
-                    print(f"Counterfactual has changed prediction at epoch {epoch+1}")
-                    print(f"  From class {pred_backup} to class {pred}")
+                    logger.info(f"Counterfactual has changed prediction at epoch {epoch+1}")
+                    logger.info(f"  From class {pred_backup} to class {pred}")
                 self.closest_to_boundary = x_backup
                 break
                 
@@ -667,8 +670,8 @@ class CounterFactualCrafting:
                 training_callback(epoch, total_loss.item())
         
         if debug:
-            print("Counterfactual generation complete.")
-        print(f"DEBUG gen.py generate_local_counterfactuals: Final counterfactual shape: {x.shape}, head: {x[:10]}")
+            logger.info("Counterfactual generation complete.")
+        logger.debug(f"generate_local_counterfactuals: Final counterfactual shape: {x.shape}, head: {x[:10]}")
         return x
 
 class LocalCounterFactualCrafting:
@@ -701,8 +704,8 @@ class LocalCounterFactualCrafting:
         paaTransformer = PAA(window_size=None, output_size=size_percentage, overlapping=True)
 
         paaSections = paaTransformer.transform(X.detach().numpy().reshape(1, -1))
-        print(f"X : {X.shape}, head: {X[:10]}")
-        print(f"paaSections shape: {paaSections.shape}, head: {paaSections[0][:10]}")
+        logger.debug(f"X : {X.shape}, head: {X[:10]}")
+        logger.debug(f"paaSections shape: {paaSections.shape}, head: {paaSections[0][:10]}")
 
 
 

@@ -1,7 +1,8 @@
+import logging
 import warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 
-import gen 
+import gen
 
 import numpy as np
 import wildboar.datasets as wb_datasets
@@ -9,6 +10,8 @@ import wildboar.distance as wb_distance
 import torch
 import torch.nn as nn
 from pyts.approximation import PiecewiseAggregateApproximation as PAA
+
+logger = logging.getLogger(__name__)
 
 # Utils
 def get_base_target_pair(X_test, y_test, nb_samples:int):
@@ -86,7 +89,7 @@ def counterfactual_batch(dataset:str, params:dict, nb_samples:int=10, nn_classif
     # Get a batch of base and target pairs
     base_target_pairs = get_base_target_pair(X_test, y_test, nb_samples)
     if base_target_pairs is None:
-        print("Not enough samples for counterfactual crafting")
+        logger.warning("Not enough samples for counterfactual crafting")
         return None
     counterfactuals = []
     for base, target in base_target_pairs:
@@ -136,7 +139,7 @@ def counterfactual_batch_generation(grsf_classifier, nn_classifier, split_datase
     # Get a batch of base and target pairs
     base_target_pairs = get_base_target_pair(X_test, y_test, nb_samples)
     if base_target_pairs is None:
-        print("Not enough samples for counterfactual crafting")
+        logger.warning("Not enough samples for counterfactual crafting")
         return None
     counterfactuals = []
     for base, target in base_target_pairs:
@@ -149,7 +152,6 @@ def counterfactual_batch_generation(grsf_classifier, nn_classifier, split_datase
                                                                     training_callback=training_callback_cacher)
         counterfactuals.append((counterfactual_sample, target, base))
 
-        # print(f"DEBUG counterfactual.py:  {cf_training_progress}")
         training_callback(cf_training_progress)
         cf_training_progress = ""  # Reset the progress after each counterfactual generation
 
@@ -170,7 +172,7 @@ def counterfactual_local_generation(grsf_classifier, classifier, target, base, b
     crafter = gen.CounterFactualCrafting(grsf_classifier, classifier)
 
     # Generate the local counterfactual
-    print(f"DEBUG counterfactual.py: Generating local counterfactual for target {target} and base {base} with label {base_label}")
+    logger.debug(f"Generating local counterfactual for target {target} and base {base} with label {base_label}")
     local_counterfactual_sample = crafter.generate_local_counterfactuals(
         target, base, base_label, binary_mask, 
         epochs=epochs,
@@ -181,7 +183,7 @@ def counterfactual_local_generation(grsf_classifier, classifier, target, base, b
     )
     
     local_counterfactual_sample = local_counterfactual_sample.detach().numpy()
-    print(f"DEBUG counterfactual.py: Local counterfactual generated: {local_counterfactual_sample}")
+    logger.debug(f"Local counterfactual generated: {local_counterfactual_sample}")
     return local_counterfactual_sample
 
 def evaluate_counterfactuals(counterfactuals:list):
@@ -209,91 +211,6 @@ def evaluate_counterfactuals(counterfactuals:list):
     
     return base_distances, target_distances
 
-#### Tests
-
-def test_get_base_target_pair():
-    datasets = wb_datasets.list_datasets()
-    fails = 0
-    for dataset in datasets:
-        print(f"Debug: dataset: {dataset}")
-        X, y = wb_datasets.load_dataset(dataset)
-        base_target_pairs = get_base_target_pair(X, y, 10)
-        assert len(base_target_pairs) == 10, f"Expected 10 base-target pairs, got {len(base_target_pairs)}"
-        if base_target_pairs is None:
-            print("test_get_base_target_pair: failed")
-            fails += 1
-            continue
-        for base, target in base_target_pairs:
-            assert base[1] != target[1]
-            assert base[0].shape == target[0].shape
-    
-        print("test_get_base_target_pair: base target pairs are valid")
-        X = torch.tensor(X, dtype=torch.float32)
-        y = torch.tensor(y, dtype=torch.long)
-        base_target_pairs = get_base_target_pair(X, y, 10)
-        assert len(base_target_pairs) == 10, f"Expected 10 base-target pairs, got {len(base_target_pairs)}"
-        if base_target_pairs is None:
-            print("test_get_base_target_pair: failed")
-            fails += 1
-            continue
-        for base, target in base_target_pairs:
-            assert base[1] != target[1]
-            assert base[0].shape == target[0].shape
-            assert isinstance(base[0], torch.Tensor)
-            assert isinstance(target[0], torch.Tensor)
-        print("test_get_base_target_pair: base target pairs torch tensors are valid")
-    
-    print(f"test_get_base_target_pair: passed with {fails} fails")
-
-class LSTMClassifier(gen.BaseSurrogateClassifier):
-    def __init__(self, input_size, hidden_size, num_layers, output_size, dropout:float=0.2):
-        super().__init__()
-        self.num_layers = num_layers
-        self.hidden_size = hidden_size
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
-        self.fc = nn.Linear(hidden_size, output_size)
-    
-    def forward(self, x):
-        if len(x.shape) == 1:
-            x = x.unsqueeze(0)
-        
-        # Reshape input to (batch_size, sequence_length, input_size)
-        if len(x.shape) == 2:
-            x = x.unsqueeze(1)  # Add sequence dimension
-        
-        # Initialize hidden state and cell state
-        h_0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
-        c_0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
-        h_n, c_n = self.lstm(x, (h_0, c_0))
-        h_n = h_n.view(-1, self.hidden_size)
-        x = self.fc(h_n)
-        return x
-
-class CNNClassifier(gen.BaseSurrogateClassifier):
-    def __init__(self, input_size, hidden_size, output_size):
-        super().__init__()
-        self.hidden_size = hidden_size
-        self.cnn = nn.Conv1d(1, hidden_size, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.fc = nn.Linear(hidden_size * input_size, output_size)
-    
-    def forward(self, x):
-        if len(x.shape) == 1:
-            x = x.unsqueeze(0)
-        
-        # Reshape input to (batch_size, channels, sequence_length)
-        if len(x.shape) == 2:
-            x = x.unsqueeze(1)  # Add channel dimension
-        
-        # Apply CNN
-        x = self.cnn(x)
-        x = self.relu(x)
-        
-        # Flatten the output for the fully connected layer
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
-
 def distance_based_analysis(grsf_classifier, counterfactuals:list, n_segments:int=10):
     """
     Computes and prints distances based informations about counterfactuals
@@ -318,7 +235,7 @@ def distance_based_analysis(grsf_classifier, counterfactuals:list, n_segments:in
             nb_valid_counterfactuals += 1
     base_sparcity = np.sum(counterfactual != base)/ counterfactual.size * 100
     
-    print(f"Counter - Base | Euclid {np.mean(base_distances_euclid)}, DTW {np.mean(base_distances_dtw)}, sparcity {base_sparcity}")
+    logger.info(f"Counter - Base | Euclid {np.mean(base_distances_euclid)}, DTW {np.mean(base_distances_dtw)}, sparcity {base_sparcity}")
     
     # Compute distance between counterfactual and target
     target_distances_euclid = []
@@ -329,7 +246,7 @@ def distance_based_analysis(grsf_classifier, counterfactuals:list, n_segments:in
         target_distances_euclid.append(np.linalg.norm(counterfactual - target))
         target_distances_dtw.append(wb_distance.dtw.dtw_distance(counterfactual, target, r=1.0))
     target_sparcity = np.sum(counterfactual != target) / counterfactual.size * 100
-    print(f"Counter - Target | Euclid {np.mean(target_distances_euclid)}, DTW {np.mean(target_distances_dtw)}, sparcity {target_sparcity}")
+    logger.info(f"Counter - Target | Euclid {np.mean(target_distances_euclid)}, DTW {np.mean(target_distances_dtw)}, sparcity {target_sparcity}")
 
     # Let's apply PAA to the counterfactuals, base and target
     paa = PAA(window_size=n_segments)
@@ -341,157 +258,9 @@ def distance_based_analysis(grsf_classifier, counterfactuals:list, n_segments:in
         base_paa = paa.transform(base[0].detach().numpy().reshape(1, -1))[0]
         paa_base.append(np.linalg.norm(cf_paa - base_paa))
         paa_target.append(np.linalg.norm(cf_paa - target_paa))
-    print(f"PAA Counter - Base | Euclid {np.mean(paa_base)}, DTW {np.mean(wb_distance.dtw.dtw_distance(paa_base, paa_target, r=1.0))}")
-    print(f"PAA Counter - Target | Euclid {np.mean(paa_target)}, DTW {np.mean(wb_distance.dtw.dtw_distance(paa_target, paa_base, r=1.0))}")
-    # Print the number of valid counterfactuals
-    print(f"Valid counterfactuals: {nb_valid_counterfactuals} out of {len(counterfactuals)} ({nb_valid_counterfactuals/len(counterfactuals)*100:.2f}%)")
+    logger.info(f"PAA Counter - Base | Euclid {np.mean(paa_base)}, DTW {np.mean(wb_distance.dtw.dtw_distance(paa_base, paa_target, r=1.0))}")
+    logger.info(f"PAA Counter - Target | Euclid {np.mean(paa_target)}, DTW {np.mean(wb_distance.dtw.dtw_distance(paa_target, paa_base, r=1.0))}")
+    logger.info(f"Valid counterfactuals: {nb_valid_counterfactuals} out of {len(counterfactuals)} ({nb_valid_counterfactuals/len(counterfactuals)*100:.2f}%)")
     
 
 
-if __name__ == "__main__":
-    # test_get_base_target_pair()
-    # Does not work with the following datasets:
-    # OliveOil
-    # Phoeme
-    # PigAirwayPressure
-    # PigArtPressure
-    # PigCVP
-    # Fungi
-    # FiftyWords
-
-    # print(f"Counterfactual crafting:")
-
-    dataset_name = "ECG200"
-    params = {
-        "n_shapelets": 10,
-        "metric": "euclidean",
-        "min_shapelet_size": 0.0,
-        "max_shapelet_size": 1.0,
-        "alphas": [0.1, 0.5, 0.9]
-    }
-    dataset = wb_datasets.load_dataset(dataset_name)
-
-    test_get_base_target_pair()
-    input("Press Enter to continue with counterfactual crafting...")
-
-    # grsf_classifier, _ = gen.grsf(dataset_name, params, debug=False)
-    # print(f"Simple classifier:")
-    # classifier = gen.SimpleSurogateClassifier(input_size=dataset[0].shape[1], hidden_size=100, output_size=len(np.unique(dataset[1])))
-    # print(f"Dataset: {dataset_name} with classes: {np.unique(dataset[1])}")
-    # counterfactuals = counterfactual_batch(dataset_name, params, 10, classifier, debug=False)
-    # distance_based_analysis(grsf_classifier, counterfactuals)
-
-    # print(f"LSTM classifier:")
-    # classifier = LSTMClassifier(input_size=dataset[0].shape[1], hidden_size=100, num_layers=2, output_size=len(np.unique(dataset[1])))
-    # counterfactuals = counterfactual_batch(dataset_name, params, 10, classifier, debug=False)
-    # distance_based_analysis(grsf_classifier, counterfactuals)
-    # print(f"CNN classifier:")
-    # classifier = CNNClassifier(input_size=dataset[0].shape[1], hidden_size=100, output_size=len(np.unique(dataset[1])))
-    # counterfactuals = counterfactual_batch(dataset_name, params, 10, classifier, debug=False)
-    # distance_based_analysis(grsf_classifier, counterfactuals)
-
-    # input("Press Enter to continue with local counterfactuals crafting...")
-    # Let's test local counterfactuals crafting
-
-
-    print(f"Local counterfactual crafting:")
-    grsf_classifier, data = gen.grsf(dataset_name, params, debug=True)
-    X_train, y_train, X_test, y_test = data
-    # classifier = gen.SimpleSurogateClassifier(input_size=X_train.shape[1], hidden_size=100, output_size=len(np.unique(y_train)))
-    classifier = CNNClassifier(input_size=X_train.shape[1], hidden_size=100, output_size=len(np.unique(y_train)))
-    classifier.train(X_train, y_train, epochs=500, lr=0.001, debug=True)
-    classifier.evaluate(X_test, y_test, debug=True)
-    crafter = gen.CounterFactualCrafting(grsf_classifier, classifier, beta=0.1)
-
-    target = X_test[0]
-    base = X_test[1]
-    base_label = y_test[1]
-
-    target = torch.tensor(target, dtype=torch.float32)
-    base = torch.tensor(base, dtype=torch.float32)
-    base_label = torch.tensor(base_label, dtype=torch.long)
-
-    binary_mask = np.zeros(len(base))
-    # Let's set the first 50% of the base to 1
-    binary_mask[:len(base)//2] = 1
-    binary_mask = torch.tensor(binary_mask, dtype=torch.float32)
-    local_counterfactual_sample = crafter.generate_local_counterfactuals(target, base, base_label, 
-                                                                         binary_mask, 
-                                                                         epochs=500, 
-                                                                         lr=0.036, 
-                                                                         beta=0.80, 
-                                                                         debug=True)
-
-    base = base.detach().numpy()
-    local_counterfactual_sample = local_counterfactual_sample.detach().numpy()
-    target = target.detach().numpy()
-    print(f"Local counterfactual sparcity: {np.sum(local_counterfactual_sample != base) / local_counterfactual_sample.size * 100:.2f}%")
-    print(f"Local counterfactual validity: {grsf_classifier.predict(local_counterfactual_sample.reshape(1, -1)) == grsf_classifier.predict(target.reshape(1, -1))}")
-    print(f"Local counterfactual distance to target: {np.linalg.norm(local_counterfactual_sample - target)}")
-    print(f"Local counterfactual distance to base: {np.linalg.norm(local_counterfactual_sample - base)}")
-
-    import matplotlib.pyplot as plt
-    import os
-
-    plt.figure(figsize=(10, 5))
-    plt.plot(target, label='Target', color='red', alpha=0.7)
-    plt.plot(base, label='Base', color='blue', alpha=0.7, linestyle='dashed')
-    plt.plot(local_counterfactual_sample, label='Local Counterfactual', color='green', alpha=0.8, linestyle='dashdot')
-    plt.title('Local Counterfactual Crafting')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    i = 0
-    while os.path.exists(f"local_counterfactual_{i}.png"):
-        i += 1
-    plt.savefig(f"local_counterfactual_{i}.png")
-    # plt.show()
-
-
-    # # Plotting the counterfactuals compared to the base and target
-
-    # import matplotlib.pyplot as plt
-    # import os
-    # size = len(counterfactual_samples)
-    # # Matrix of plots with superposed counterfactuals, base and target
-    # # The goal is to have a grid of plots to visualize the counterfactuals
-    # # compared to the base and target
-
-    # # Create subplot grid
-    # cols = 3
-    # rows = (size + cols - 1) // cols  # Ceiling division
-    # fig, axes = plt.subplots(rows, cols, figsize=(15, 5 * rows))
-    
-    # # Flatten axes array for easier indexing
-    # if rows == 1:
-    #     axes = axes.reshape(1, -1)
-    # axes = axes.flatten()
-    
-    # # Convert tensors to numpy for plotting
-    # target_np = target.detach().numpy()
-    # base_np = base.detach().numpy()
-    
-    # for i, counterfactual in enumerate(counterfactual_samples):
-    #     if i >= len(axes):
-    #         break
-            
-    #     counterfactual_np = counterfactual.detach().numpy()
-        
-    #     axes[i].plot(base_np, label='Base', color='blue', alpha=0.7, linestyle='dashed')
-    #     axes[i].plot(target_np, label='Target', color='red', alpha=0.7)
-    #     axes[i].plot(counterfactual_np, label='Counterfactual', color='green', alpha=0.8, linestyle='dashdot')
-    #     axes[i].set_title(f'Counterfactual {i+1}')
-    #     axes[i].legend()
-    #     axes[i].grid(True, alpha=0.3)
-    
-    # # Hide unused subplots
-    # for i in range(size, len(axes)):
-    #     axes[i].set_visible(False)
-    
-    # plt.tight_layout()
-    # i = 0
-    # while os.path.exists(f"local_counterfactual_{i}.png"):
-    #     i += 1
-    # # Let's save the plot
-    # plt.savefig(f"local_counterfactual_{i}.png")
-    # plt.show()
-        

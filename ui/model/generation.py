@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 import torch
@@ -5,6 +6,8 @@ import numpy as np
 import streamlit as st
 import time
 from typing import Dict, Any, Tuple, Optional, List
+
+logger = logging.getLogger(__name__)
 UI_ROOT = os.path.dirname(os.path.dirname(__file__))
 if UI_ROOT not in sys.path:
     sys.path.append(UI_ROOT)
@@ -190,15 +193,15 @@ class LocalCounterfactualGeneratorObject:
             
         # Reset training progress
         self._training_progress = ""
-        print(f"DEBUG: {str(self)}")
-        print(f"DEBUG: {type(self._surrogate_model)}")
+        logger.debug(str(self))
+        logger.debug(f"Surrogate model type: {type(self._surrogate_model)}")
         crafter = CounterFactualCrafting(
             self._grsf_model,
             self._surrogate_model
         )
 
         start_time = time.time()
-        print(f"DEBUG: Starting counterfactual generation with parameters: {self._parameters}")
+        logger.debug(f"Starting counterfactual generation with parameters: {self._parameters}")
         # Generate the counterfactual
         self._counterfactual = crafter.generate_local_counterfactuals(
             self._target_sample,
@@ -212,7 +215,7 @@ class LocalCounterfactualGeneratorObject:
             training_callback=self._training_callback,
         )
         self._counterfactual = self._counterfactual.detach().cpu().numpy() if torch.is_tensor(self._counterfactual) else self._counterfactual
-        print(f"DEBUG: Counterfactual generation completed in {time.time() - start_time:.2f} seconds")
+        logger.debug(f"Counterfactual generation completed in {time.time() - start_time:.2f} seconds")
         # End timing
         self._generation_time = time.time() - start_time
         
@@ -397,7 +400,7 @@ class GlobalCounterfactualGeneratorObject:
         self.clear()  # Clear previous counterfactuals when parameters change
     
     def _training_callback(self, data: str) -> str:
-        print(f"DEBUG: Training callback data: {data}")
+        logger.debug(f"Training callback data: {data}")
         self._training_progress.append(data)
         return data
     
@@ -417,8 +420,8 @@ class GlobalCounterfactualGeneratorObject:
         self._training_progress = []
         
         start_time = time.time()
-        print(f"DEBUG: Starting batch counterfactual generation with {self._nb_samples} samples")
-        print(f"DEBUG: Parameters: {self._parameters}")
+        logger.debug(f"Starting batch counterfactual generation with {self._nb_samples} samples")
+        logger.debug(f"Parameters: {self._parameters}")
         
         try:
             # Generate batch counterfactuals
@@ -439,16 +442,16 @@ class GlobalCounterfactualGeneratorObject:
             
             # Check if generation was successful
             if self._counterfactuals is None or len(self._counterfactuals) == 0:
-                print(f"DEBUG: Batch generation failed - no counterfactuals generated")
+                logger.debug("Batch generation failed - no counterfactuals generated")
                 return False
                 
             self._is_generated = True
-            print(f"DEBUG: Batch counterfactual generation completed in {self._generation_time:.2f} seconds")
-            print(f"DEBUG: Generated {len(self._counterfactuals)} counterfactuals")
+            logger.debug(f"Batch counterfactual generation completed in {self._generation_time:.2f} seconds")
+            logger.debug(f"Generated {len(self._counterfactuals)} counterfactuals")
             return True
             
         except Exception as e:
-            print(f"ERROR: Batch counterfactual generation failed: {str(e)}")
+            logger.error(f"Batch counterfactual generation failed: {str(e)}")
             self._training_progress.append(f"Batch generation error: {str(e)}")
             return False
             
