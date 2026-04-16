@@ -44,23 +44,13 @@ $$
 
 ### Prerequisites
 
-- Python 3.13+
-- pip
+- Docker and Docker Compose
 
-### Local installation
+### Run with Docker
 
 ```bash
 git clone https://github.com/your-username/grsf-counterfactual-generation.git
 cd grsf-counterfactual-generation
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-streamlit run ui/main.py
-```
-
-### Docker
-
-```bash
 docker compose up --build
 # Open http://localhost:8501
 ```
@@ -93,4 +83,4 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 
 ## Author
 
-**Gabin Vrillault** — ENSICAEN / DSV Stockholm University
+**Gabin Vrillault**  
